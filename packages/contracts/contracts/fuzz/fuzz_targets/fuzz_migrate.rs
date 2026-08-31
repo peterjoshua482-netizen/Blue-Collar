@@ -4,10 +4,13 @@
 //! Invariant: running `migrate` over arbitrary registered-worker state must
 //! never corrupt or drop existing storage, and must bump the schema version
 //! by exactly one. This is the data-integrity guarantee an upgrade relies on.
-use arbitrary::Arbitrary;
-use bluecollar_registry::{RegistryContract, RegistryContractClient};
 use libfuzzer_sys::fuzz_target;
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, String as SorobanString, Symbol};
+use soroban_sdk::{
+    testutils::Address as _,
+    Address, BytesN, Env, String as SorobanString, Symbol,
+};
+use bluecollar_registry::{RegistryContract, RegistryContractClient};
+use arbitrary::Arbitrary;
 
 #[derive(Arbitrary, Debug)]
 struct MigrateInput {
@@ -50,15 +53,11 @@ fuzz_target!(|input: MigrateInput| {
     let cat = Symbol::new(&env, "plumber");
     let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
 
-    client.register(
-        &id, &owner, &name_str, &cat, &zero_hash, &zero_hash, &curator,
-    );
+    client.register(&id, &owner, &name_str, &cat, &zero_hash, &zero_hash, &curator);
     client.update_reputation(&admin, &id, &reputation);
 
     // Capture pre-migration state.
-    let before = client
-        .get_worker(&id)
-        .expect("worker must exist before migrate");
+    let before = client.get_worker(&id).expect("worker must exist before migrate");
     let version_before = client.get_schema_version();
 
     // Run the migration (the data-integrity path of an upgrade).
@@ -68,23 +67,10 @@ fuzz_target!(|input: MigrateInput| {
     let after = client.get_worker(&id).expect("worker must survive migrate");
     assert_eq!(after.owner, before.owner, "owner changed during migrate");
     assert_eq!(after.name, before.name, "name changed during migrate");
-    assert_eq!(
-        after.category, before.category,
-        "category changed during migrate"
-    );
-    assert_eq!(
-        after.reputation, before.reputation,
-        "reputation changed during migrate"
-    );
-    assert_eq!(
-        after.is_active, before.is_active,
-        "is_active changed during migrate"
-    );
+    assert_eq!(after.category, before.category, "category changed during migrate");
+    assert_eq!(after.reputation, before.reputation, "reputation changed during migrate");
+    assert_eq!(after.is_active, before.is_active, "is_active changed during migrate");
 
     // Invariant 2: the schema version advances by exactly one.
-    assert_eq!(
-        client.get_schema_version(),
-        version_before + 1,
-        "version not bumped by one"
-    );
+    assert_eq!(client.get_schema_version(), version_before + 1, "version not bumped by one");
 });

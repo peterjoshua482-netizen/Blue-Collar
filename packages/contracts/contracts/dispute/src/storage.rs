@@ -4,11 +4,12 @@
 //! shape — plus typed get/set helpers. No validation or business rules
 //! live here; see `logic.rs`.
 
-use bluecollar_types::storage::extend_ttl;
 use soroban_sdk::{contracttype, Address, Env, String, Symbol, Vec};
 
-pub use bluecollar_types::storage::{TTL_EXTEND_TO, TTL_THRESHOLD};
-
+/// Approximate TTL extension target (~1 year at 5 s/ledger).
+pub const TTL_EXTEND_TO: u32 = 535_000;
+/// Extend TTL only when it drops below this threshold (~6 months).
+pub const TTL_THRESHOLD: u32 = 267_500;
 
 /// Dispute lifecycle phase.
 #[contracttype]
@@ -38,7 +39,7 @@ pub enum DisputeOutcome {
 
 /// On-chain dispute record.
 #[contracttype]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone)]
 pub struct Dispute {
     /// Unique identifier.
     pub id: Symbol,
@@ -92,12 +93,12 @@ pub fn has_admin(env: &Env) -> bool {
     env.storage().instance().has(&DataKey::Admin)
 }
 
-/// Get the admin address.
-pub fn get_admin(env: &Env) -> Result<Address, bluecollar_types::ContractError> {
+/// Get the admin address. Panics if not initialized.
+pub fn get_admin(env: &Env) -> Address {
     env.storage()
         .instance()
         .get(&DataKey::Admin)
-        .ok_or(bluecollar_types::ContractError::NotInitialized)
+        .expect("Not initialized")
 }
 
 /// Set the admin address. Instance storage doesn't use TTL, so no extension needed.
@@ -128,7 +129,7 @@ pub fn get_arbitrators(env: &Env) -> Vec<Address> {
     env.storage()
         .persistent()
         .get(&DataKey::Arbitrators)
-        .unwrap_or_else(|| Vec::new(env))
+        .unwrap_or_else(|_| Vec::new(env))
 }
 
 /// Write arbitrators list. Optimized to avoid redundant operations.
@@ -136,7 +137,9 @@ pub fn set_arbitrators(env: &Env, arbitrators: &Vec<Address>) {
     let key = DataKey::Arbitrators;
     env.storage().persistent().set(&key, arbitrators);
     // Extend TTL to prevent eviction of critical access control data
-    extend_ttl(env, &key);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
 }
 
 // =============================================================================
@@ -144,15 +147,11 @@ pub fn set_arbitrators(env: &Env, arbitrators: &Vec<Address>) {
 // =============================================================================
 
 pub fn has_dispute(env: &Env, id: &Symbol) -> bool {
-    env.storage()
-        .persistent()
-        .has(&DataKey::Dispute(id.clone()))
+    env.storage().persistent().has(&DataKey::Dispute(id.clone()))
 }
 
 pub fn get_dispute(env: &Env, id: &Symbol) -> Option<Dispute> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::Dispute(id.clone()))
+    env.storage().persistent().get(&DataKey::Dispute(id.clone()))
 }
 
 /// Persist a dispute record and extend its TTL.
@@ -161,14 +160,16 @@ pub fn set_dispute(env: &Env, id: &Symbol, dispute: &Dispute) {
     let key = DataKey::Dispute(id.clone());
     env.storage().persistent().set(&key, dispute);
     // TTL extension is done immediately after write without redundant has() check
-    extend_ttl(env, &key);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
 }
 
 pub fn get_dispute_list(env: &Env) -> Vec<Symbol> {
     env.storage()
         .persistent()
         .get(&DataKey::DisputeList)
-        .unwrap_or_else(|| Vec::new(env))
+        .unwrap_or_else(|_| Vec::new(env))
 }
 
 /// Append a dispute id to the ordered list and extend its TTL.
@@ -178,10 +179,12 @@ pub fn push_dispute_id(env: &Env, id: &Symbol) {
     let mut list = get_dispute_list(env);
 
     // Only push if not already present (idempotent and prevents duplicates)
-    if !list.iter().any(|x| x == *id) {
+    if !list.iter().any(|x| x == id) {
         list.push_back(id.clone());
         env.storage().persistent().set(&key, &list);
         // TTL extension immediately after write
-        extend_ttl(env, &key);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
     }
 }

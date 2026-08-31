@@ -1,4 +1,3 @@
-import type { Prisma } from '@prisma/client'
 import { db } from '../db.js'
 
 export type PaginationMeta = {
@@ -18,17 +17,6 @@ type PaginateArgs = {
   include?: Record<string, unknown>
   page: number
   limit: number
-}
-
-/**
- * Minimal shape shared by the Prisma delegates this helper dispatches to at runtime
- * (`db.worker`, `db.user`) — narrower than either delegate's real type, but that's the
- * point: it's genuinely dynamic (the model is chosen by a runtime string), so this is
- * the honest common surface rather than a lossy cast to one specific delegate type.
- */
-interface PaginatableDelegate {
-  findMany(args: { where?: Record<string, unknown>; include?: Record<string, unknown>; skip: number; take: number }): Prisma.PrismaPromise<unknown[]>
-  count(args: { where?: Record<string, unknown> }): Prisma.PrismaPromise<number>
 }
 
 /**
@@ -59,17 +47,13 @@ export async function paginate<T>({
   page,
   limit,
 }: PaginateArgs): Promise<{ data: T[]; meta: PaginationMeta }> {
-  const delegate = db[model] as unknown as PaginatableDelegate
+  const delegate = db[model] as any
   const skip = (page - 1) * limit
 
-  const [rows, total] = await db.$transaction([
+  const [data, total]: [T[], number] = await db.$transaction([
     delegate.findMany({ where, include, skip, take: limit }),
     delegate.count({ where }),
   ])
-  // `T` is the caller-chosen record shape for `model` — the delegate above is
-  // deliberately erased to a generic PaginatableDelegate, so bridging back to it
-  // here is the one place that trusts the caller's type parameter.
-  const data = rows as T[]
 
   const totalPages = Math.ceil(total / limit)
 

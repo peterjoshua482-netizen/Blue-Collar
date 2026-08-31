@@ -3,7 +3,7 @@ extern crate std;
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger},
+    testutils::{Address as _, Ledger, LedgerInfo},
     token::{Client as TokenClient, StellarAssetClient},
     Address, Env, Symbol,
 };
@@ -40,9 +40,16 @@ fn init(env: &Env, contract: &Address, admin: &Address, fee_bps: u32, fee_recipi
 }
 
 fn set_time(env: &Env, ts: u64) {
-    let mut info = env.ledger().get();
-    info.timestamp = ts;
-    env.ledger().set(info);
+    env.ledger().set(LedgerInfo {
+        timestamp: ts,
+        protocol_version: 22,
+        sequence_number: 1,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 100_000,
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -64,24 +71,20 @@ fn test_initialize_success() {
 }
 
 #[test]
+#[should_panic(expected = "Already initialized")]
 fn test_initialize_twice_panics() {
     let (env, admin, fee_recipient, _from, _to, _token) = setup();
     let contract = deploy(&env);
     init(&env, &contract, &admin, 100, &fee_recipient);
-    assert_eq!(
-        MarketContractClient::new(&env, &contract).try_initialize(&admin, &100, &fee_recipient),
-        Err(Ok(ContractError::AlreadyInitialized))
-    );
+    MarketContractClient::new(&env, &contract).initialize(&admin, &100, &fee_recipient);
 }
 
 #[test]
+#[should_panic(expected = "fee_bps exceeds maximum")]
 fn test_initialize_fee_too_high() {
     let (env, admin, fee_recipient, _from, _to, _token) = setup();
     let contract = deploy(&env);
-    assert_eq!(
-        MarketContractClient::new(&env, &contract).try_initialize(&admin, &501, &fee_recipient),
-        Err(Ok(ContractError::FeeBpsExceedsMaximum))
-    );
+    MarketContractClient::new(&env, &contract).initialize(&admin, &501, &fee_recipient);
 }
 
 // ---------------------------------------------------------------------------
@@ -148,14 +151,12 @@ fn test_tip_custom_token() {
 }
 
 #[test]
+#[should_panic(expected = "Amount must be positive")]
 fn test_tip_zero_amount() {
     let (env, admin, fee_recipient, from, to, token_addr) = setup();
     let contract = deploy(&env);
     init(&env, &contract, &admin, 100, &fee_recipient);
-    assert_eq!(
-        MarketContractClient::new(&env, &contract).try_tip(&from, &to, &token_addr, &0),
-        Err(Ok(ContractError::AmountMustBePositive))
-    );
+    MarketContractClient::new(&env, &contract).tip(&from, &to, &token_addr, &0);
 }
 
 #[test]
@@ -184,14 +185,12 @@ fn test_update_fee_success() {
 }
 
 #[test]
+#[should_panic(expected = "fee_bps exceeds maximum")]
 fn test_update_fee_too_high() {
     let (env, admin, fee_recipient, _from, _to, _token) = setup();
     let contract = deploy(&env);
     init(&env, &contract, &admin, 100, &fee_recipient);
-    assert_eq!(
-        MarketContractClient::new(&env, &contract).try_update_fee(&501),
-        Err(Ok(ContractError::FeeBpsExceedsMaximum))
-    );
+    MarketContractClient::new(&env, &contract).update_fee(&501);
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +219,7 @@ fn test_create_escrow_success() {
 }
 
 #[test]
+#[should_panic(expected = "Escrow id already exists")]
 fn test_create_escrow_duplicate_id() {
     let (env, admin, fee_recipient, from, to, token_addr) = setup();
     let contract = deploy(&env);
@@ -228,30 +228,18 @@ fn test_create_escrow_duplicate_id() {
     let client = MarketContractClient::new(&env, &contract);
     let id = Symbol::new(&env, "esc1");
     client.create_escrow(&id, &from, &to, &token_addr, &500, &9999);
-    assert_eq!(
-        client.try_create_escrow(&id, &from, &to, &token_addr, &500, &9999),
-        Err(Ok(ContractError::EscrowAlreadyExists))
-    );
+    client.create_escrow(&id, &from, &to, &token_addr, &500, &9999);
 }
 
 #[test]
+#[should_panic(expected = "Amount must be positive")]
 fn test_create_escrow_zero_amount() {
     let (env, admin, fee_recipient, from, to, token_addr) = setup();
     let contract = deploy(&env);
     init(&env, &contract, &admin, 0, &fee_recipient);
 
     let id = Symbol::new(&env, "esc1");
-    assert_eq!(
-        MarketContractClient::new(&env, &contract).try_create_escrow(
-            &id,
-            &from,
-            &to,
-            &token_addr,
-            &0,
-            &9999
-        ),
-        Err(Ok(ContractError::AmountMustBePositive))
-    );
+    MarketContractClient::new(&env, &contract).create_escrow(&id, &from, &to, &token_addr, &0, &9999);
 }
 
 // ---------------------------------------------------------------------------
@@ -291,6 +279,7 @@ fn test_release_escrow_by_worker() {
 }
 
 #[test]
+#[should_panic(expected = "Not authorized")]
 fn test_release_escrow_unauthorized() {
     let (env, admin, fee_recipient, from, to, token_addr) = setup();
     let contract = deploy(&env);
@@ -300,13 +289,11 @@ fn test_release_escrow_unauthorized() {
     let client = MarketContractClient::new(&env, &contract);
     client.create_escrow(&id, &from, &to, &token_addr, &1000, &9999);
     let stranger = Address::generate(&env);
-    assert_eq!(
-        client.try_release_escrow(&id, &stranger),
-        Err(Ok(ContractError::NotAuthorized))
-    );
+    client.release_escrow(&id, &stranger);
 }
 
 #[test]
+#[should_panic(expected = "Already released")]
 fn test_release_escrow_twice_panics() {
     let (env, admin, fee_recipient, from, to, token_addr) = setup();
     let contract = deploy(&env);
@@ -316,10 +303,7 @@ fn test_release_escrow_twice_panics() {
     let client = MarketContractClient::new(&env, &contract);
     client.create_escrow(&id, &from, &to, &token_addr, &1000, &9999);
     client.release_escrow(&id, &from);
-    assert_eq!(
-        client.try_release_escrow(&id, &from),
-        Err(Ok(ContractError::AlreadyReleased))
-    );
+    client.release_escrow(&id, &from);
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +330,7 @@ fn test_cancel_escrow_after_expiry() {
 }
 
 #[test]
+#[should_panic(expected = "Not authorized")]
 fn test_cancel_escrow_by_worker_panics() {
     let (env, admin, fee_recipient, from, to, token_addr) = setup();
     let contract = deploy(&env);
@@ -355,13 +340,11 @@ fn test_cancel_escrow_by_worker_panics() {
     let id = Symbol::new(&env, "esc1");
     let client = MarketContractClient::new(&env, &contract);
     client.create_escrow(&id, &from, &to, &token_addr, &1000, &2000);
-    assert_eq!(
-        client.try_cancel_escrow(&id, &to),
-        Err(Ok(ContractError::NotAuthorized))
-    );
+    client.cancel_escrow(&id, &to);
 }
 
 #[test]
+#[should_panic(expected = "Escrow not yet expired")]
 fn test_cancel_escrow_before_expiry_panics() {
     let (env, admin, fee_recipient, from, to, token_addr) = setup();
     let contract = deploy(&env);
@@ -371,13 +354,11 @@ fn test_cancel_escrow_before_expiry_panics() {
     let id = Symbol::new(&env, "esc1");
     let client = MarketContractClient::new(&env, &contract);
     client.create_escrow(&id, &from, &to, &token_addr, &1000, &2000);
-    assert_eq!(
-        client.try_cancel_escrow(&id, &from),
-        Err(Ok(ContractError::EscrowNotYetExpired))
-    );
+    client.cancel_escrow(&id, &from);
 }
 
 #[test]
+#[should_panic(expected = "Already cancelled")]
 fn test_cancel_escrow_twice_panics() {
     let (env, admin, fee_recipient, from, to, token_addr) = setup();
     let contract = deploy(&env);
@@ -388,13 +369,11 @@ fn test_cancel_escrow_twice_panics() {
     let client = MarketContractClient::new(&env, &contract);
     client.create_escrow(&id, &from, &to, &token_addr, &1000, &2000);
     client.cancel_escrow(&id, &from);
-    assert_eq!(
-        client.try_cancel_escrow(&id, &from),
-        Err(Ok(ContractError::AlreadyCancelled))
-    );
+    client.cancel_escrow(&id, &from);
 }
 
 #[test]
+#[should_panic(expected = "Escrow cancelled")]
 fn test_release_after_cancel_panics() {
     let (env, admin, fee_recipient, from, to, token_addr) = setup();
     let contract = deploy(&env);
@@ -405,10 +384,7 @@ fn test_release_after_cancel_panics() {
     let client = MarketContractClient::new(&env, &contract);
     client.create_escrow(&id, &from, &to, &token_addr, &1000, &2000);
     client.cancel_escrow(&id, &from);
-    assert_eq!(
-        client.try_release_escrow(&id, &from),
-        Err(Ok(ContractError::EscrowCancelled))
-    );
+    client.release_escrow(&id, &from);
 }
 
 // ---------------------------------------------------------------------------
@@ -434,6 +410,7 @@ fn test_cancel_expired_escrow_success() {
 }
 
 #[test]
+#[should_panic(expected = "Escrow not yet expired")]
 fn test_cancel_expired_escrow_not_expired() {
     let (env, admin, fee_recipient, from, to, token_addr) = setup();
     let contract = deploy(&env);
@@ -443,13 +420,11 @@ fn test_cancel_expired_escrow_not_expired() {
     let id = Symbol::new(&env, "esc1");
     let client = MarketContractClient::new(&env, &contract);
     client.create_escrow(&id, &from, &to, &token_addr, &1000, &2000);
-    assert_eq!(
-        client.try_cancel_expired_escrow(&id),
-        Err(Ok(ContractError::EscrowNotYetExpired))
-    );
+    client.cancel_expired_escrow(&id);
 }
 
 #[test]
+#[should_panic(expected = "Escrow not active")]
 fn test_cancel_expired_already_released() {
     let (env, admin, fee_recipient, from, to, token_addr) = setup();
     let contract = deploy(&env);
@@ -462,10 +437,7 @@ fn test_cancel_expired_already_released() {
     client.release_escrow(&id, &from);
 
     set_time(&env, 3000);
-    assert_eq!(
-        client.try_cancel_expired_escrow(&id),
-        Err(Ok(ContractError::EscrowNotActive))
-    );
+    client.cancel_expired_escrow(&id);
 }
 
 #[test]
@@ -473,9 +445,7 @@ fn test_get_escrow_nonexistent_returns_none() {
     let (env, admin, fee_recipient, _from, _to, _token) = setup();
     let contract = deploy(&env);
     init(&env, &contract, &admin, 0, &fee_recipient);
-    assert!(MarketContractClient::new(&env, &contract)
-        .get_escrow(&Symbol::new(&env, "nope"))
-        .is_none());
+    assert!(MarketContractClient::new(&env, &contract).get_escrow(&Symbol::new(&env, "nope")).is_none());
 }
 
 // ===========================================================================
@@ -520,15 +490,7 @@ mod upgrade_framework {
             let escrow_id = Symbol::new(&env, "esc1");
             client.create_escrow(&escrow_id, &from, &to, &token, &1_000, &9_999);
 
-            UpgradeFixture {
-                env,
-                contract,
-                admin,
-                from,
-                to,
-                token,
-                escrow_id,
-            }
+            UpgradeFixture { env, contract, admin, from, to, token, escrow_id }
         }
 
         fn client(&self) -> MarketContractClient {
@@ -555,13 +517,11 @@ mod upgrade_framework {
     }
 
     #[test]
+    #[should_panic(expected = "Wrong schema version")]
     fn migration_is_not_replayable() {
         let f = UpgradeFixture::new();
         f.client().migrate(&f.admin, &1u32);
-        assert_eq!(
-            f.client().try_migrate(&f.admin, &1u32),
-            Err(Ok(ContractError::WrongSchemaVersion))
-        );
+        f.client().migrate(&f.admin, &1u32);
     }
 
     // -- 2. backward compatibility ------------------------------------------
@@ -600,26 +560,22 @@ mod upgrade_framework {
     // -- 4. security / authorization regression -----------------------------
 
     #[test]
+    #[should_panic(expected = "Missing role")]
     fn upgrade_requires_upgrader_role() {
         // Admin is initialized with ROLE_ADMIN but never granted ROLE_UPGRADER.
         let (env, admin, fee_recipient, _from, _to, _token) = setup();
         let contract = deploy(&env);
         init(&env, &contract, &admin, 0, &fee_recipient);
         let hash = BytesN::from_array(&env, &[1u8; 32]);
-        assert_eq!(
-            MarketContractClient::new(&env, &contract).try_upgrade(&hash),
-            Err(Ok(ContractError::MissingRole))
-        );
+        MarketContractClient::new(&env, &contract).upgrade(&hash);
     }
 
     #[test]
+    #[should_panic(expected = "Missing role")]
     fn migrate_requires_admin() {
         let f = UpgradeFixture::new();
         let stranger = Address::generate(&f.env);
-        assert_eq!(
-            f.client().try_migrate(&stranger, &1u32),
-            Err(Ok(ContractError::MissingRole))
-        );
+        f.client().migrate(&stranger, &1u32);
     }
 }
 
@@ -648,14 +604,7 @@ mod pause_tests {
             init(&env, &contract, &admin, 0, &fee_recipient);
             let client = MarketContractClient::new(&env, &contract);
             client.grant_role(&admin, &Symbol::new(&env, ROLE_PAUSER), &admin);
-            PauseFixture {
-                env,
-                contract,
-                admin,
-                from,
-                to,
-                token,
-            }
+            PauseFixture { env, contract, admin, from, to, token }
         }
         fn client(&self) -> MarketContractClient {
             MarketContractClient::new(&self.env, &self.contract)
@@ -681,77 +630,62 @@ mod pause_tests {
     }
 
     #[test]
+    #[should_panic(expected = "Missing role")]
     fn pause_requires_pauser_role() {
         let f = PauseFixture::new();
         let stranger = Address::generate(&f.env);
-        assert_eq!(
-            f.client().try_pause(&stranger),
-            Err(Ok(ContractError::MissingRole))
-        );
+        f.client().pause(&stranger);
     }
 
     #[test]
+    #[should_panic(expected = "Missing role")]
     fn unpause_requires_pauser_role() {
         let f = PauseFixture::new();
         f.client().pause(&f.admin);
         let stranger = Address::generate(&f.env);
-        assert_eq!(
-            f.client().try_unpause(&stranger),
-            Err(Ok(ContractError::MissingRole))
-        );
+        f.client().unpause(&stranger);
     }
 
     // -- mutations blocked while paused ---------------------------------------
 
     #[test]
+    #[should_panic(expected = "Contract is paused")]
     fn tip_blocked_when_paused() {
         let f = PauseFixture::new();
         f.client().pause(&f.admin);
-        assert_eq!(
-            f.client().try_tip(&f.from, &f.to, &f.token, &100),
-            Err(Ok(ContractError::ContractIsPaused))
-        );
+        f.client().tip(&f.from, &f.to, &f.token, &100);
     }
 
     #[test]
+    #[should_panic(expected = "Contract is paused")]
     fn create_escrow_blocked_when_paused() {
         let f = PauseFixture::new();
         f.client().pause(&f.admin);
         let id = Symbol::new(&f.env, "esc1");
-        assert_eq!(
-            f.client()
-                .try_create_escrow(&id, &f.from, &f.to, &f.token, &100, &9999),
-            Err(Ok(ContractError::ContractIsPaused))
-        );
+        f.client().create_escrow(&id, &f.from, &f.to, &f.token, &100, &9999);
     }
 
     #[test]
+    #[should_panic(expected = "Contract is paused")]
     fn release_escrow_blocked_when_paused() {
         let f = PauseFixture::new();
         // Create escrow before pausing
         let id = Symbol::new(&f.env, "esc1");
-        f.client()
-            .create_escrow(&id, &f.from, &f.to, &f.token, &100, &9999);
+        f.client().create_escrow(&id, &f.from, &f.to, &f.token, &100, &9999);
         f.client().pause(&f.admin);
-        assert_eq!(
-            f.client().try_release_escrow(&id, &f.from),
-            Err(Ok(ContractError::ContractIsPaused))
-        );
+        f.client().release_escrow(&id, &f.from);
     }
 
     #[test]
+    #[should_panic(expected = "Contract is paused")]
     fn cancel_escrow_blocked_when_paused() {
         let f = PauseFixture::new();
         set_time(&f.env, 1000);
         let id = Symbol::new(&f.env, "esc1");
-        f.client()
-            .create_escrow(&id, &f.from, &f.to, &f.token, &100, &2000);
+        f.client().create_escrow(&id, &f.from, &f.to, &f.token, &100, &2000);
         f.client().pause(&f.admin);
         set_time(&f.env, 3000);
-        assert_eq!(
-            f.client().try_cancel_escrow(&id, &f.from),
-            Err(Ok(ContractError::ContractIsPaused))
-        );
+        f.client().cancel_escrow(&id, &f.from);
     }
 
     // -- read-only calls unaffected ------------------------------------------
@@ -760,8 +694,7 @@ mod pause_tests {
     fn get_escrow_works_while_paused() {
         let f = PauseFixture::new();
         let id = Symbol::new(&f.env, "esc1");
-        f.client()
-            .create_escrow(&id, &f.from, &f.to, &f.token, &100, &9999);
+        f.client().create_escrow(&id, &f.from, &f.to, &f.token, &100, &9999);
         f.client().pause(&f.admin);
         // Should NOT panic
         let escrow = f.client().get_escrow(&id);
@@ -784,7 +717,10 @@ mod pause_tests {
         f.client().unpause(&f.admin);
         // Should NOT panic
         f.client().tip(&f.from, &f.to, &f.token, &100);
-        assert_eq!(TokenClient::new(&f.env, &f.token).balance(&f.to), 100);
+        assert_eq!(
+            TokenClient::new(&f.env, &f.token).balance(&f.to),
+            100
+        );
     }
 }
 
@@ -832,16 +768,7 @@ mod multi_asset_tests {
             let custom = custom_id.address();
             StellarAssetClient::new(&env, &custom).mint(&payer, &2_000);
 
-            AssetFixture {
-                env,
-                contract,
-                admin,
-                payer,
-                worker,
-                xlm,
-                usdc,
-                custom,
-            }
+            AssetFixture { env, contract, admin, payer, worker, xlm, usdc, custom }
         }
 
         fn client(&self) -> MarketContractClient {
@@ -882,11 +809,7 @@ mod multi_asset_tests {
         // Tipping with USDC must not affect XLM balance and vice versa.
         let f = AssetFixture::new();
         f.client().tip(&f.payer, &f.worker, &f.usdc, &300);
-        assert_eq!(
-            f.balance(&f.xlm, &f.worker),
-            0,
-            "XLM should be unaffected by USDC tip"
-        );
+        assert_eq!(f.balance(&f.xlm, &f.worker), 0, "XLM should be unaffected by USDC tip");
         assert_eq!(f.balance(&f.usdc, &f.worker), 300);
     }
 
@@ -896,8 +819,7 @@ mod multi_asset_tests {
     fn escrow_create_and_release_with_usdc() {
         let f = AssetFixture::new();
         let id = Symbol::new(&f.env, "usdc_esc");
-        f.client()
-            .create_escrow(&id, &f.payer, &f.worker, &f.usdc, &1_000, &9_999);
+        f.client().create_escrow(&id, &f.payer, &f.worker, &f.usdc, &1_000, &9_999);
         assert_eq!(f.balance(&f.usdc, &f.payer), 4_000);
         assert_eq!(f.balance(&f.usdc, &f.contract), 1_000);
 
@@ -911,8 +833,7 @@ mod multi_asset_tests {
         let f = AssetFixture::new();
         set_time(&f.env, 1_000);
         let id = Symbol::new(&f.env, "ctok_esc");
-        f.client()
-            .create_escrow(&id, &f.payer, &f.worker, &f.custom, &500, &2_000);
+        f.client().create_escrow(&id, &f.payer, &f.worker, &f.custom, &500, &2_000);
         set_time(&f.env, 3_000);
         f.client().cancel_escrow(&id, &f.payer);
         assert_eq!(f.balance(&f.custom, &f.payer), 2_000);
@@ -925,10 +846,8 @@ mod multi_asset_tests {
         let f = AssetFixture::new();
         let id1 = Symbol::new(&f.env, "e1");
         let id2 = Symbol::new(&f.env, "e2");
-        f.client()
-            .create_escrow(&id1, &f.payer, &f.worker, &f.usdc, &1_000, &9_999);
-        f.client()
-            .create_escrow(&id2, &f.payer, &f.worker, &f.custom, &500, &9_999);
+        f.client().create_escrow(&id1, &f.payer, &f.worker, &f.usdc, &1_000, &9_999);
+        f.client().create_escrow(&id2, &f.payer, &f.worker, &f.custom, &500, &9_999);
 
         f.client().release_escrow(&id1, &f.payer);
         // id2 (custom) must still be locked
@@ -963,13 +882,9 @@ mod multi_asset_tests {
         let broke = Address::generate(&f.env);
         // No tokens minted for `broke` — create_escrow transfer must fail.
         let id = Symbol::new(&f.env, "broke_esc");
-        f.client()
-            .create_escrow(&id, &broke, &f.worker, &f.usdc, &1, &9_999);
+        f.client().create_escrow(&id, &broke, &f.worker, &f.usdc, &1, &9_999);
         // Verify no partial state was written
-        assert!(
-            f.client().get_escrow(&id).is_none(),
-            "escrow must not be stored after failed transfer"
-        );
+        assert!(f.client().get_escrow(&id).is_none(), "escrow must not be stored after failed transfer");
     }
 
     #[test]
@@ -981,8 +896,7 @@ mod multi_asset_tests {
         let id = Symbol::new(&f.env, "fail_esc");
         let broke = Address::generate(&f.env);
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            f.client()
-                .create_escrow(&id, &broke, &f.worker, &f.usdc, &100, &9_999);
+            f.client().create_escrow(&id, &broke, &f.worker, &f.usdc, &100, &9_999);
         }));
         // The escrow must not exist in storage after a failed create.
         assert!(f.client().get_escrow(&id).is_none());

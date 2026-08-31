@@ -1,7 +1,6 @@
 import { Request, Response } from 'express'
 import * as indexerService from '../services/indexer.service.js'
 import { catchAsync } from '../utils/catchAsync.js'
-import { AppError, ErrorCode } from '../utils/AppError.js'
 
 /**
  * GET /api/events?contractId=...&eventName=...&limit=50&offset=0
@@ -11,7 +10,11 @@ export const queryEvents = catchAsync(async (req: Request, res: Response) => {
   const { contractId, eventName, limit = '50', offset = '0' } = req.query
 
   if (!contractId) {
-    throw new AppError('contractId is required', 400, true, ErrorCode.VALIDATION_ERROR)
+    return res.status(400).json({
+      status: 'error',
+      code: 400,
+      message: 'contractId is required',
+    })
   }
 
   const result = await indexerService.queryEvents(

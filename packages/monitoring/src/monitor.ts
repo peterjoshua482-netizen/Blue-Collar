@@ -1,4 +1,4 @@
-import { Server } from '@stellar/stellar-sdk';
+import { Server, Horizon } from '@stellar/stellar-sdk';
 
 interface MonitorConfig {
   rpcUrl: string;

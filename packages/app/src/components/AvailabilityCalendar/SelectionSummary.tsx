@@ -1,6 +1,5 @@
 import { Clock } from "lucide-react";
 import type { Slot } from "@/components/AvailabilityCalendar";
-import { formatDate } from "@/lib/utils";
 
 interface SelectionSummaryProps {
   rangeStart: Date | null;
@@ -26,7 +25,7 @@ export default function SelectionSummary({
       {rangeEnd ? (
         <p>
           <span className="font-medium">
-            {formatDate(rangeStart)} – {formatDate(rangeEnd)}
+            {rangeStart.toLocaleDateString()} – {rangeEnd.toLocaleDateString()}
           </span>
           {" "}selected
           {" "}
@@ -39,7 +38,7 @@ export default function SelectionSummary({
         </p>
       ) : (
         <p>
-          <span className="font-medium">{formatDate(rangeStart)}</span>
+          <span className="font-medium">{rangeStart.toLocaleDateString()}</span>
           {" "}— select an end date
         </p>
       )}

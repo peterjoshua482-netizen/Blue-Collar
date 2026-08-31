@@ -3,19 +3,10 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import type { Request, Response, NextFunction } from 'express'
-import type { MediaAsset } from '@prisma/client'
 import { AppError } from '../utils/AppError.js'
 import { uploadFile, getSignedDownloadUrl } from '../services/storage.service.js'
 import { processImage } from '../utils/imageProcessor.js'
 import { db } from '../db.js'
-
-declare global {
-  namespace Express {
-    interface Request {
-      mediaAsset?: MediaAsset
-    }
-  }
-}
 
 const UPLOAD_DIR = process.env['UPLOAD_DIR'] ?? 'storage/uploads'
 const MAX_FILE_SIZE = Number(process.env['MAX_FILE_SIZE'] ?? 5 * 1024 * 1024) // 5 MB
@@ -97,7 +88,7 @@ export async function processAndStore(req: Request, _res: Response, next: NextFu
       },
     })
 
-    req.mediaAsset = asset
+    ;(req as any).mediaAsset = asset
     next()
   } catch (err) {
     next(err)

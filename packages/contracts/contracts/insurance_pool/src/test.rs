@@ -46,15 +46,8 @@ impl AuthFixture {
         client.grant_role(&admin, &Symbol::new(&env, ROLE_UPGRADER), &upgrader);
 
         AuthFixture {
-            env,
-            contract,
-            admin,
-            pauser,
-            claims_mgr,
-            upgrader,
-            stranger,
-            token,
-            member,
+            env, contract, admin, pauser, claims_mgr, upgrader, stranger,
+            token, member,
         }
     }
 
@@ -65,18 +58,15 @@ impl AuthFixture {
     fn contribute(&self) {
         let token_client = TokenClient::new(&self.env, &self.token);
         token_client.approve(&self.member, &self.contract, &100_000, &200_000);
-        self.client()
-            .contribute(&self.member, &self.token, &100_000);
+        self.client().contribute(&self.member, &self.token, &100_000);
     }
 
     fn file_claim(&self, claim_id: &str) {
-        self.client()
-            .file_claim(&self.member, &Symbol::new(&self.env, claim_id), &10_000);
+        self.client().file_claim(&self.member, &Symbol::new(&self.env, claim_id), &10_000);
     }
 
     fn approve_claim(&self, claim_id: &str) {
-        self.client()
-            .approve_claim(&self.claims_mgr, &Symbol::new(&self.env, claim_id));
+        self.client().approve_claim(&self.claims_mgr, &Symbol::new(&self.env, claim_id));
     }
 }
 
@@ -88,99 +78,77 @@ mod auth_failures {
     use super::*;
 
     #[test]
+    #[should_panic(expected = "Missing role")]
     fn grant_role_requires_admin() {
         let f = AuthFixture::new();
         let role = Symbol::new(&f.env, ROLE_PAUSER);
-        assert_eq!(
-            f.client()
-                .try_grant_role(&f.stranger, &role, &Address::generate(&f.env)),
-            Err(Ok(ContractError::MissingRole))
-        );
+        f.client().grant_role(&f.stranger, &role, &Address::generate(&f.env));
     }
 
     #[test]
+    #[should_panic(expected = "Missing role")]
     fn revoke_role_requires_admin() {
         let f = AuthFixture::new();
         let role = Symbol::new(&f.env, ROLE_PAUSER);
-        assert_eq!(
-            f.client().try_revoke_role(&f.stranger, &role, &f.pauser),
-            Err(Ok(ContractError::MissingRole))
-        );
+        f.client().revoke_role(&f.stranger, &role, &f.pauser);
     }
 
     #[test]
+    #[should_panic(expected = "Missing role")]
     fn pause_requires_pauser() {
         let f = AuthFixture::new();
-        assert_eq!(
-            f.client().try_pause(&f.stranger),
-            Err(Ok(ContractError::MissingRole))
-        );
+        f.client().pause(&f.stranger);
     }
 
     #[test]
+    #[should_panic(expected = "Missing role")]
     fn unpause_requires_admin() {
         let f = AuthFixture::new();
         f.client().pause(&f.pauser);
-        assert_eq!(
-            f.client().try_unpause(&f.stranger),
-            Err(Ok(ContractError::MissingRole))
-        );
+        f.client().unpause(&f.stranger);
     }
 
     #[test]
+    #[should_panic(expected = "Missing role")]
     fn approve_claim_requires_claims_mgr() {
         let f = AuthFixture::new();
         f.contribute();
         f.file_claim("c1");
-        assert_eq!(
-            f.client()
-                .try_approve_claim(&f.stranger, &Symbol::new(&f.env, "c1")),
-            Err(Ok(ContractError::MissingRole))
-        );
+        f.client().approve_claim(&f.stranger, &Symbol::new(&f.env, "c1"));
     }
 
     #[test]
+    #[should_panic(expected = "Missing role")]
     fn reject_claim_requires_claims_mgr() {
         let f = AuthFixture::new();
         f.contribute();
         f.file_claim("c2");
-        assert_eq!(
-            f.client()
-                .try_reject_claim(&f.stranger, &Symbol::new(&f.env, "c2")),
-            Err(Ok(ContractError::MissingRole))
-        );
+        f.client().reject_claim(&f.stranger, &Symbol::new(&f.env, "c2"));
     }
 
     #[test]
+    #[should_panic(expected = "Missing role")]
     fn pay_claim_requires_claims_mgr() {
         let f = AuthFixture::new();
         f.contribute();
         f.file_claim("c3");
         f.approve_claim("c3");
-        assert_eq!(
-            f.client()
-                .try_pay_claim(&f.stranger, &Symbol::new(&f.env, "c3"), &f.token),
-            Err(Ok(ContractError::MissingRole))
-        );
+        f.client().pay_claim(&f.stranger, &Symbol::new(&f.env, "c3"), &f.token);
     }
 
     #[test]
+    #[should_panic(expected = "Missing role")]
     fn rebalance_pool_requires_admin() {
         let f = AuthFixture::new();
-        assert_eq!(
-            f.client().try_rebalance_pool(&f.stranger, &f.token, &600),
-            Err(Ok(ContractError::MissingRole))
-        );
+        f.client().rebalance_pool(&f.stranger, &f.token, &600);
     }
 
     #[test]
+    #[should_panic(expected = "Missing role")]
     fn upgrade_requires_upgrader() {
         let f = AuthFixture::new();
         let hash = BytesN::from_array(&f.env, &[1u8; 32]);
-        assert_eq!(
-            f.client().try_upgrade(&f.stranger, &hash),
-            Err(Ok(ContractError::MissingRole))
-        );
+        f.client().upgrade(&f.stranger, &hash);
     }
 }
 
@@ -192,64 +160,50 @@ mod paused_state {
     use super::*;
 
     #[test]
+    #[should_panic(expected = "Contract is paused")]
     fn contribute_while_paused() {
         let f = AuthFixture::new();
         f.client().pause(&f.pauser);
-        assert_eq!(
-            f.client().try_contribute(&f.member, &f.token, &100),
-            Err(Ok(ContractError::ContractIsPaused))
-        );
+        f.client().contribute(&f.member, &f.token, &100);
     }
 
     #[test]
+    #[should_panic(expected = "Contract is paused")]
     fn file_claim_while_paused() {
         let f = AuthFixture::new();
         f.client().pause(&f.pauser);
-        assert_eq!(
-            f.client()
-                .try_file_claim(&f.member, &Symbol::new(&f.env, "p1"), &100),
-            Err(Ok(ContractError::ContractIsPaused))
-        );
+        f.client().file_claim(&f.member, &Symbol::new(&f.env, "p1"), &100);
     }
 
     #[test]
+    #[should_panic(expected = "Contract is paused")]
     fn approve_claim_while_paused() {
         let f = AuthFixture::new();
         f.contribute();
         f.file_claim("p2");
         f.client().pause(&f.pauser);
-        assert_eq!(
-            f.client()
-                .try_approve_claim(&f.claims_mgr, &Symbol::new(&f.env, "p2")),
-            Err(Ok(ContractError::ContractIsPaused))
-        );
+        f.client().approve_claim(&f.claims_mgr, &Symbol::new(&f.env, "p2"));
     }
 
     #[test]
+    #[should_panic(expected = "Contract is paused")]
     fn reject_claim_while_paused() {
         let f = AuthFixture::new();
         f.contribute();
         f.file_claim("p3");
         f.client().pause(&f.pauser);
-        assert_eq!(
-            f.client()
-                .try_reject_claim(&f.claims_mgr, &Symbol::new(&f.env, "p3")),
-            Err(Ok(ContractError::ContractIsPaused))
-        );
+        f.client().reject_claim(&f.claims_mgr, &Symbol::new(&f.env, "p3"));
     }
 
     #[test]
+    #[should_panic(expected = "Contract is paused")]
     fn pay_claim_while_paused() {
         let f = AuthFixture::new();
         f.contribute();
         f.file_claim("p4");
         f.approve_claim("p4");
         f.client().pause(&f.pauser);
-        assert_eq!(
-            f.client()
-                .try_pay_claim(&f.claims_mgr, &Symbol::new(&f.env, "p4"), &f.token),
-            Err(Ok(ContractError::ContractIsPaused))
-        );
+        f.client().pay_claim(&f.claims_mgr, &Symbol::new(&f.env, "p4"), &f.token);
     }
 }
 
@@ -261,46 +215,34 @@ mod boundary {
     use super::*;
 
     #[test]
+    #[should_panic(expected = "Amount must be positive")]
     fn contribute_zero_amount() {
         let f = AuthFixture::new();
-        assert_eq!(
-            f.client().try_contribute(&f.member, &f.token, &0),
-            Err(Ok(ContractError::AmountMustBePositive))
-        );
+        f.client().contribute(&f.member, &f.token, &0);
     }
 
     #[test]
+    #[should_panic(expected = "Amount must be positive")]
     fn file_claim_zero_amount() {
         let f = AuthFixture::new();
-        assert_eq!(
-            f.client()
-                .try_file_claim(&f.member, &Symbol::new(&f.env, "z1"), &0),
-            Err(Ok(ContractError::AmountMustBePositive))
-        );
+        f.client().file_claim(&f.member, &Symbol::new(&f.env, "z1"), &0);
     }
 
     #[test]
+    #[should_panic(expected = "Premium exceeds maximum")]
     fn initialize_premium_too_high() {
         let env = Env::default();
         let admin = Address::generate(&env);
         let token = Address::generate(&env);
-        assert_eq!(
-            InsurancePoolContractClient::new(
-                &env,
-                &env.register_contract(None, InsurancePoolContract)
-            )
-            .try_initialize(&admin, &token, &10_001),
-            Err(Ok(ContractError::PremiumExceedsMaximum))
-        );
+        InsurancePoolContractClient::new(&env, &env.register_contract(None, InsurancePoolContract))
+            .initialize(&admin, &token, &10_001);
     }
 
     #[test]
+    #[should_panic(expected = "Premium exceeds maximum")]
     fn rebalance_pool_premium_too_high() {
         let f = AuthFixture::new();
-        assert_eq!(
-            f.client().try_rebalance_pool(&f.admin, &f.token, &10_001),
-            Err(Ok(ContractError::PremiumExceedsMaximum))
-        );
+        f.client().rebalance_pool(&f.admin, &f.token, &10_001);
     }
 
     #[test]

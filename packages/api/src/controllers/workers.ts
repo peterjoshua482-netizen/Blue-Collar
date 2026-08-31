@@ -1,13 +1,12 @@
 import type { Request, Response } from 'express'
 import * as workerService from '../services/worker.service.js'
 import * as searchService from '../services/search.service.js'
+import { handleError } from '../utils/handleError.js'
 import { catchAsync } from '../utils/catchAsync.js'
-import { AppError, ErrorCode } from '../utils/AppError.js'
 import { workerSerializer } from '../serializers/index.js'
 import type { CreateWorkerBody, UpdateWorkerBody } from '../interfaces/index.js'
 import { invalidateCachePattern } from '../middleware/cache.js'
 import { getWorkerReputation, syncReputationToDb } from '../services/stellar.service.js'
-import { ErrorMessages } from '../constants/errors.js'
 
 // Parse a comma-separated ?fields= query param into a set for O(1) lookup.
 // An empty/absent param means "return all fields".
@@ -72,7 +71,7 @@ async function listWorkersGeoMode(query: Record<string, unknown>, fieldSet: Set<
   const radiusKm = radius ? Number(radius) : 10
 
   if (isNaN(userLat) || isNaN(userLng) || isNaN(radiusKm))
-    throw new AppError(ErrorMessages.INVALID_GEO_PARAMS, 400, true, ErrorCode.VALIDATION_ERROR)
+    return res.status(400).json({ status: 'error', message: 'Invalid lat, lng, or radius', code: 400 })
 
   const paginated = await workerService.listWorkersGeo({
     lat: userLat, lng: userLng, radiusKm,
@@ -107,13 +106,13 @@ async function listWorkersOffsetMode(query: Record<string, unknown>, fieldSet: S
     maxRating: maxRating ? Number(maxRating) : undefined,
     available: available !== undefined ? Number(available) : undefined,
     listedSince: listedSince ? Number(listedSince) : undefined,
-    sortBy: sortBy as 'rating' | 'newest' | 'oldest' | 'name' | undefined,
-    sortOrder: sortOrder as 'asc' | 'desc' | undefined,
+    sortBy: sortBy as any,
+    sortOrder: sortOrder as any,
     isVerified: isVerified !== undefined ? isVerified === 'true' : undefined,
   })
 
-  const resultData = fieldSet && Array.isArray(result.data)
-    ? { ...result, data: result.data.map((w) => sparseFields(w as Record<string, unknown>, fieldSet)) }
+  const resultData = fieldSet && Array.isArray((result as any).data)
+    ? { ...result, data: (result as any).data.map((w: Record<string, unknown>) => sparseFields(w, fieldSet)) }
     : result
   return res.json({ ...resultData, status: 'success', code: 200 })
 }
@@ -142,7 +141,7 @@ export async function listWorkers(req: Request, res: Response) {
  */
 export async function showWorker(req: Request, res: Response) {
   const worker = await workerService.getWorkerWithPortfolio(req.params.id)
-  if (!worker) throw new AppError('Not found', 404, true, ErrorCode.NOT_FOUND)
+  if (!worker) return res.status(404).json({ status: 'error', message: 'Not found', code: 404 })
   return res.json({ data: worker, status: 'success', code: 200 })
 }
 
@@ -153,18 +152,19 @@ export async function showWorker(req: Request, res: Response) {
  * @param req - Body: `CreateWorkerBody`. `req.user` must be set by auth middleware.
  * @param res - JSON `{ data: Worker, status, code: 201 }`.
  */
-export const createWorker = catchAsync(async (req: Request<{}, {}, CreateWorkerBody>, res: Response) => {
-  const worker = await workerService.createWorkerWithMedia(req.body, req.user!.id, req.file)
-  await invalidateCachePattern(`cache:*workers?*`)
-  return res.status(201).json({
-    // NOTE: worker has already been through formatWorker() (narrowed category/curator
-    // shape), not the raw Prisma relations workerSerializer.serialize() expects — a
-    // pre-existing mismatch this any-cleanup surfaced but does not fix (out of scope).
-    data: workerSerializer.serialize(worker as unknown as Parameters<typeof workerSerializer.serialize>[0]),
-    status: 'success',
-    code: 201
-  })
-})
+export async function createWorker(req: Request<{}, {}, CreateWorkerBody>, res: Response) {
+  try {
+    const worker = await workerService.createWorkerWithMedia(req.body, req.user!.id, req.file)
+    await invalidateCachePattern(`cache:*workers?*`)
+    return res.status(201).json({
+      data: workerSerializer.serialize(worker as any),
+      status: 'success',
+      code: 201
+    })
+  } catch (err) {
+    return handleError(res, err)
+  }
+}
 
 /**
  * PUT /api/workers/:id
@@ -188,17 +188,20 @@ export const createWorker = catchAsync(async (req: Request<{}, {}, CreateWorkerB
  * @param req - Route param `id`. Body: `UpdateWorkerBody` (JSON or multipart).
  * @param res - JSON `{ data: Worker, status, code }`.
  */
-export const updateWorker = catchAsync(async (req: Request<{ id: string }, {}, UpdateWorkerBody>, res: Response) => {
-  const worker = await workerService.updateWorkerWithMedia(req.params.id, req.body, req.file, req.user?.id)
-  await invalidateCachePattern(`cache:*workers/${req.params.id}*`)
-  await invalidateCachePattern(`cache:*workers?*`)
-  return res.json({
-    // See createWorker() above: pre-existing formatWorker()/serialize() shape mismatch.
-    data: workerSerializer.serialize(worker as unknown as Parameters<typeof workerSerializer.serialize>[0]),
-    status: 'success',
-    code: 200
-  })
-})
+export async function updateWorker(req: Request<{ id: string }, {}, UpdateWorkerBody>, res: Response) {
+  try {
+    const worker = await workerService.updateWorkerWithMedia(req.params.id, req.body, req.file, req.user?.id)
+    await invalidateCachePattern(`cache:*workers/${req.params.id}*`)
+    await invalidateCachePattern(`cache:*workers?*`)
+    return res.json({
+      data: workerSerializer.serialize(worker as any),
+      status: 'success',
+      code: 200
+    })
+  } catch (err) {
+    return handleError(res, err)
+  }
+}
 
 /**
  * DELETE /api/workers/:id
@@ -208,10 +211,14 @@ export const updateWorker = catchAsync(async (req: Request<{ id: string }, {}, U
  * @param res - 204 No Content on success.
  */
 export async function deleteWorker(req: Request, res: Response) {
-  await workerService.deleteWorkerWithMedia(req.params.id as string)
-  await invalidateCachePattern(`cache:*workers/${req.params.id}*`)
-  await invalidateCachePattern(`cache:*workers?*`)
-  return res.status(204).send()
+  try {
+    await workerService.deleteWorkerWithMedia(req.params.id as string)
+    await invalidateCachePattern(`cache:*workers/${req.params.id}*`)
+    await invalidateCachePattern(`cache:*workers?*`)
+    return res.status(204).send()
+  } catch (err) {
+    return handleError(res, err)
+  }
 }
 
 /**
@@ -221,17 +228,20 @@ export async function deleteWorker(req: Request, res: Response) {
  * @param req - Route param `id`.
  * @param res - JSON `{ data: Worker, status, code }`.
  */
-export const toggleActivation = catchAsync(async (req: Request, res: Response) => {
-  const updated = await workerService.toggleWorker(req.params.id as string)
-  await invalidateCachePattern(`cache:*workers/${req.params.id}*`)
-  await invalidateCachePattern(`cache:*workers?*`)
-  return res.json({
-    // See createWorker() above: pre-existing formatWorker()/serialize() shape mismatch.
-    data: workerSerializer.serialize(updated as unknown as Parameters<typeof workerSerializer.serialize>[0]),
-    status: 'success',
-    code: 200
-  })
-})
+export async function toggleActivation(req: Request, res: Response) {
+  try {
+    const updated = await workerService.toggleWorker(req.params.id as string)
+    await invalidateCachePattern(`cache:*workers/${req.params.id}*`)
+    await invalidateCachePattern(`cache:*workers?*`)
+    return res.json({
+      data: workerSerializer.serialize(updated as any),
+      status: 'success',
+      code: 200
+    })
+  } catch (err) {
+    return handleError(res, err)
+  }
+}
 
 /**
  * GET /api/workers/mine
@@ -279,7 +289,7 @@ export function createSearchHandlers(service: SearchService = searchService) {
         maxRating: maxRating ? Number(maxRating) : undefined,
         dayOfWeek: dayOfWeek !== undefined ? Number(dayOfWeek) : undefined,
         isVerified: isVerified !== undefined ? isVerified === 'true' : undefined,
-        sortBy: sortBy as 'relevance' | 'rating' | 'distance' | 'newest' | undefined,
+        sortBy: sortBy as any,
         page: Number(page),
         limit: Math.min(Math.max(Number(limit) || 20, 1), 100),
       }, req.ip)
@@ -337,8 +347,12 @@ export const { searchWorkersHandler, advancedSearch } = createSearchHandlers()
  * @param res - JSON `{ data: ReputationSummary, status, code }`.
  */
 export async function getReputation(req: Request, res: Response) {
-  const data = await getWorkerReputation(req.params.id)
-  return res.json({ data, status: 'success', code: 200 })
+  try {
+    const data = await getWorkerReputation(req.params.id)
+    return res.json({ data, status: 'success', code: 200 })
+  } catch (err) {
+    return handleError(res, err)
+  }
 }
 
 /**
@@ -354,11 +368,15 @@ export async function getReputation(req: Request, res: Response) {
  * @param res - JSON `{ data: Worker, status, code }`.
  */
 export async function syncReputation(req: Request, res: Response) {
-  const { avgRating, reviewCount, reputation } = req.body as {
-    avgRating: number
-    reviewCount: number
-    reputation: number
+  try {
+    const { avgRating, reviewCount, reputation } = req.body as {
+      avgRating: number
+      reviewCount: number
+      reputation: number
+    }
+    const data = await syncReputationToDb(req.params.id, avgRating, reviewCount, reputation)
+    return res.json({ data, status: 'success', code: 200 })
+  } catch (err) {
+    return handleError(res, err)
   }
-  const data = await syncReputationToDb(req.params.id, avgRating, reviewCount, reputation)
-  return res.json({ data, status: 'success', code: 200 })
 }

@@ -41,12 +41,6 @@ declare global {
     interface Request {
       apiVersion?: string
       versionDeprecated?: boolean
-      authMethod?: string
-      authMetadata?: {
-        version: string
-        method: string
-        timestamp: string
-      }
     }
   }
 }

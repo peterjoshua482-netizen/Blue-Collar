@@ -4,14 +4,16 @@
 //! Business logic and contract entry-points import from this module only.
 //! Keeping storage access centralised makes schema migrations straightforward.
 
-use bluecollar_types::storage::extend_ttl;
-use soroban_sdk::{contracttype, Address, BytesN, Env, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, Env, String, Symbol, Vec};
 
 // =============================================================================
 // TTL Constants
 // =============================================================================
 
-pub use bluecollar_types::storage::{TTL_EXTEND_TO, TTL_THRESHOLD};
+/// Approximate TTL extension target (~1 year at 5 s/ledger).
+pub const TTL_EXTEND_TO: u32 = 535_000;
+/// Extend TTL only when it drops below this threshold (~6 months).
+pub const TTL_THRESHOLD: u32 = 267_500;
 
 // =============================================================================
 // Types
@@ -35,7 +37,7 @@ pub enum JobStatus {
 
 /// A single on-chain job listing.
 #[contracttype]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone)]
 pub struct Job {
     /// Unique job identifier.
     pub id: Symbol,
@@ -99,7 +101,9 @@ pub fn save_job_list(env: &Env, list: &Vec<Symbol>) {
 
 /// Read a single job by id. Returns `None` if not found.
 pub fn load_job(env: &Env, id: &Symbol) -> Option<Job> {
-    env.storage().persistent().get(&DataKey::Job(id.clone()))
+    env.storage()
+        .persistent()
+        .get(&DataKey::Job(id.clone()))
 }
 
 /// Write a single job record.
@@ -110,9 +114,14 @@ pub fn save_job(env: &Env, job: &Job) {
     extend_job_ttl(env, &job.id);
 }
 
-/// Extend the TTL on a job entry. A missing entry is a no-op.
+/// Extend the TTL on a job entry.
 pub fn extend_job_ttl(env: &Env, id: &Symbol) {
-    extend_ttl(env, &DataKey::Job(id.clone()));
+    let key = DataKey::Job(id.clone());
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
+    }
 }
 
 /// Read the job list for a specific poster.

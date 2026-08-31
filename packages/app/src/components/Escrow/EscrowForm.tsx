@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { validateEscrowForm } from "@/utils/validation";
 
 interface EscrowFormData {
   amount: string;
@@ -20,7 +19,10 @@ export default function EscrowForm({ onSubmit, disabled }: EscrowFormProps) {
   const [errors, setErrors] = useState<Partial<EscrowFormData>>({});
 
   function validate(): boolean {
-    const e = validateEscrowForm(form);
+    const e: Partial<EscrowFormData> = {};
+    if (!form.amount || parseFloat(form.amount) <= 0) e.amount = "Amount must be greater than 0";
+    if (!form.counterparty.trim()) e.counterparty = "Counterparty address is required";
+    if (!form.terms.trim()) e.terms = "Terms are required";
     setErrors(e);
     return Object.keys(e).length === 0;
   }

@@ -7,7 +7,7 @@ import RatingBreakdown from "./RatingBreakdown";
 import ReviewSortFilter, { type SortOption } from "./ReviewSortFilter";
 import EmptyState from "./EmptyState";
 import type { Review, RatingDistributionEntry } from "@/types";
-import { useWorkerReviews } from "@/hooks/queries";
+import { getWorkerReviews } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 const PAGE_SIZE = 5;
@@ -19,7 +19,7 @@ const SORT_LABELS: Record<SortOption, string> = {
   lowest: "lowest rated first",
 };
 
-interface ReviewsSectionProps {
+interface Props {
   workerId: string;
   initialReviews: Review[];
   reviewCount: number;
@@ -37,7 +37,8 @@ export default function ReviewsSection({
   const { user } = useAuth();
   const [reviews, setReviews] = useState<Review[]>(initialReviews);
   const [count, setCount] = useState<number>(reviewCount);
-  const [ratingFilter, setRatingFilter] = useState<number | null>(null);
+  const [filteredReviews, setFilteredReviews] = useState<Review[] | null>(null);
+  const [filterLoading, setFilterLoading] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [sort, setSort] = useState<SortOption>("newest");
   /** Announced politely when the list changes under the user without a page move. */
@@ -78,30 +79,28 @@ export default function ReviewsSection({
     target?.focus();
   }, [visibleCount]);
 
-  const filterParams = ratingFilter !== null ? { rating: String(ratingFilter), limit: "50" } : undefined;
-  const filteredQuery = useWorkerReviews(workerId, ratingFilter !== null ? filterParams : undefined);
-  const filterLoading = ratingFilter !== null && filteredQuery.isLoading;
-  const filteredReviews =
-    ratingFilter !== null && filteredQuery.isSuccess ? (filteredQuery.data.data ?? []) : null;
-
-  const handleFilterChange = (rating: number | null) => {
-    setRatingFilter(rating);
-    setVisibleCount(PAGE_SIZE);
+  const handleFilterChange = async (rating: number | null) => {
     if (rating === null) {
+      setFilteredReviews(null);
+      setVisibleCount(PAGE_SIZE);
       setAnnouncement("Rating filter cleared. Showing all reviews.");
+      return;
+    }
+    setFilterLoading(true);
+    try {
+      const res = await getWorkerReviews(workerId, { rating: String(rating), limit: "50" });
+      setFilteredReviews(res.data);
+      setVisibleCount(PAGE_SIZE);
+      setAnnouncement(
+        `Showing ${res.data.length} ${rating}-star review${res.data.length !== 1 ? "s" : ""}.`,
+      );
+    } catch {
+      setFilteredReviews(null);
+      setAnnouncement("Could not load filtered reviews. Showing all reviews.");
+    } finally {
+      setFilterLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (ratingFilter === null) return;
-    if (filteredQuery.isSuccess) {
-      const n = (filteredQuery.data.data ?? []).length;
-      setAnnouncement(`Showing ${n} ${ratingFilter}-star review${n !== 1 ? "s" : ""}.`);
-    } else if (filteredQuery.isError) {
-      setAnnouncement("Could not load filtered reviews. Showing all reviews.");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredQuery.isSuccess, filteredQuery.isError, filteredQuery.data, ratingFilter]);
 
   const source = filteredReviews ?? reviews;
 

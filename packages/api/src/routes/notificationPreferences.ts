@@ -1,8 +1,8 @@
 import { Router, Request, Response } from "express";
-import { db } from "../db.js";
-import { logger } from '../config/logger.js';
+import { PrismaClient } from "@prisma/client";
 
 const router = Router();
+const prisma = new PrismaClient();
 
 const ALLOWED_FIELDS = [
   "newWorkerNearby",
@@ -16,12 +16,12 @@ type AllowedField = (typeof ALLOWED_FIELDS)[number];
 // GET /api/users/me/notifications
 router.get("/", async (req: Request, res: Response) => {
   try {
-    const userId = req.user!.id;
-    let prefs = await db.notificationPreferences.findUnique({
+    const userId = (req as any).user.id;
+    let prefs = await prisma.notificationPreferences.findUnique({
       where: { userId },
     });
     if (!prefs) {
-      prefs = await db.notificationPreferences.create({
+      prefs = await prisma.notificationPreferences.create({
         data: {
           userId,
           newWorkerNearby: true,
@@ -33,7 +33,7 @@ router.get("/", async (req: Request, res: Response) => {
     }
     res.json(prefs);
   } catch (err) {
-    logger.error({ err }, 'GET notification prefs error');
+    console.error("GET notification prefs error:", err);
     res.status(500).json({ error: "Internal server error." });
   }
 });
@@ -41,7 +41,7 @@ router.get("/", async (req: Request, res: Response) => {
 // PUT /api/users/me/notifications
 router.put("/", async (req: Request, res: Response) => {
   try {
-    const userId = req.user!.id;
+    const userId = (req as any).user.id;
     const updates: Partial<Record<AllowedField, boolean>> = {};
 
     for (const field of ALLOWED_FIELDS) {
@@ -59,7 +59,7 @@ router.put("/", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "No valid fields provided." });
     }
 
-    const prefs = await db.notificationPreferences.upsert({
+    const prefs = await prisma.notificationPreferences.upsert({
       where: { userId },
       update: updates,
       create: {
@@ -74,7 +74,7 @@ router.put("/", async (req: Request, res: Response) => {
 
     res.json(prefs);
   } catch (err) {
-    logger.error({ err }, 'PUT notification prefs error');
+    console.error("PUT notification prefs error:", err);
     res.status(500).json({ error: "Internal server error." });
   }
 });

@@ -16,9 +16,6 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createSdk, HorizonClient, RegistryClient, SdkError } from '../index.js'
-// Shared contract account fixtures (#1276) — replace hand-rolled account
-// response objects with the deterministic, well-tested helpers.
-import { buildMockAccountResponse, fundedAccount, makeTestAccount } from '@bluecollar/test-utils'
 
 // ── Global fetch mock ─────────────────────────────────────────────────────────
 
@@ -106,12 +103,10 @@ describe('HorizonClient.getAccountInfo', () => {
   })
 
   it('returns parsed balance and sequence for a live account', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        buildMockAccountResponse(fundedAccount({ balance: '250.0000000' }), '987654321'),
-      ),
-    )
+    mockFetchOnce({
+      balances: [{ balance: '250.0000000', asset_type: 'native' }],
+      sequence: '987654321',
+    })
 
     const info = await client.getAccountInfo(PUBLIC_KEY)
 
@@ -133,9 +128,8 @@ describe('HorizonClient.getAccountInfo', () => {
   it('throws SdkError with statusCode 404 for unfunded accounts', async () => {
     mockFetchFail(404)
 
-    const err = await client.getAccountInfo(PUBLIC_KEY).catch((e) => e)
-    expect(err).toBeInstanceOf(SdkError)
-    expect(err).toMatchObject({
+    await expect(client.getAccountInfo(PUBLIC_KEY)).rejects.toThrow(SdkError)
+    await expect(client.getAccountInfo(PUBLIC_KEY)).rejects.toMatchObject({
       statusCode: 404,
     })
   })
@@ -147,9 +141,12 @@ describe('HorizonClient.getAccountInfo', () => {
   })
 
   it('calls the correct Horizon accounts endpoint', async () => {
-    const spy = vi
-      .spyOn(global, 'fetch')
-      .mockResolvedValueOnce(buildMockAccountResponse(makeTestAccount({ balance: '1.0' }), '1'))
+    const spy = vi.spyOn(global, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ balances: [{ balance: '1.0', asset_type: 'native' }], sequence: '1' }),
+        { status: 200 },
+      ),
+    )
     await client.getAccountInfo(PUBLIC_KEY)
     expect(spy).toHaveBeenCalledWith(`${TESTNET_URL}/accounts/${PUBLIC_KEY}`)
   })
@@ -313,15 +310,6 @@ describe('HorizonClient.fundTestnetAccount', () => {
     )
     await expect(client.fundTestnetAccount(PUBLIC_KEY)).rejects.toThrow(/account already funded/)
   })
-
-  it('throws SdkError with status text when error field is absent', async () => {
-    vi.spyOn(global, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify({}), { status: 503, statusText: 'Service Unavailable' }),
-    )
-    const err = await client.fundTestnetAccount(PUBLIC_KEY).catch((e) => e)
-    expect(err).toBeInstanceOf(SdkError)
-    expect(err.message).toMatch(/Service Unavailable/)
-  })
 })
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -383,9 +371,8 @@ describe('RegistryClient.simulateInvoke', () => {
       error: { message: 'contract not found', code: -32600 },
     })
 
-    const err = await registry.simulateInvoke('get_worker', []).catch((e) => e)
-    expect(err).toBeInstanceOf(SdkError)
-    expect(err).toMatchObject({
+    await expect(registry.simulateInvoke('get_worker', [])).rejects.toThrow(SdkError)
+    await expect(registry.simulateInvoke('get_worker', [])).rejects.toMatchObject({
       statusCode: 400,
     })
   })

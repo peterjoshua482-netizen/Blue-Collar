@@ -142,8 +142,9 @@ test.describe('Job Posting Flow — Happy Path (#1039)', () => {
       )
       const errorSignal = page.locator('text=/internal server error|500/i')
 
-      // Wait for page to settle after submission — no hard error
-      await expect(errorSignal).toHaveCount(0, { timeout: 5000 })
+      // Wait briefly then assert no hard error
+      await page.waitForTimeout(1500)
+      await expect(errorSignal).toHaveCount(0)
     }
   })
 

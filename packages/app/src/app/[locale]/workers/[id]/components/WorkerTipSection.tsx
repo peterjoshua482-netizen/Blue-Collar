@@ -1,9 +1,5 @@
-import dynamic from "next/dynamic";
+import TipModal from "@/components/TipModal";
 import TransactionList from "@/components/TransactionList";
-import { PaymentFlowProvider } from "@/context/PaymentFlowContext";
-
-// Pulls in @stellar/stellar-sdk — split out so it isn't bundled into the initial route chunk.
-const TipModal = dynamic(() => import("@/components/TipModal"));
 
 interface Props {
   workerName: string;
@@ -19,7 +15,7 @@ export function WorkerTipSection({ workerName, walletAddress }: Props) {
     );
   }
   return (
-    <PaymentFlowProvider workerName={workerName} walletAddress={walletAddress}>
+    <>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-medium text-gray-700">Support this worker</p>
@@ -27,9 +23,9 @@ export function WorkerTipSection({ workerName, walletAddress }: Props) {
             Send XLM directly to their Stellar wallet
           </p>
         </div>
-        <TipModal />
+        <TipModal workerName={workerName} walletAddress={walletAddress} />
       </div>
       <TransactionList walletAddress={walletAddress} />
-    </PaymentFlowProvider>
+    </>
   );
 }

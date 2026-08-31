@@ -14,30 +14,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { Request, Response, NextFunction } from 'express'
 
-// ── Combined db mock (all describe blocks share this shape) ───────────────────
-// Each test section only configures the spies it needs via .mockResolvedValue.
-vi.mock('../db.js', () => ({
-  db: {
-    idempotencyKey: {
-      findUnique: vi.fn(),
-      upsert: vi.fn().mockResolvedValue({}),
-    },
-    refreshToken: {
-      findUnique: vi.fn(),
-      update: vi.fn().mockResolvedValue({}),
-      create: vi.fn().mockResolvedValue({}),
-    },
-    user: { findUnique: vi.fn() },
-    escrowRecord: {
-      findUnique: vi.fn(),
-      update: vi.fn(),
-    },
-    systemConfig: {
-      findUnique: vi.fn(),
-    },
-  },
-}))
-
 // ─────────────────────────────────────────────────────────────────────────────
 // BUG 1 – Payment double-submit (#517 / idempotency middleware)
 //
@@ -56,11 +32,21 @@ vi.mock('../db.js', () => ({
  * @regression Payment double-submit – idempotency middleware (#517)
  */
 describe('[regression] Payment double-submit – idempotency key replay', () => {
+  // Inline mock so this test has no DB dependency
+  vi.mock('../db.js', () => ({
+    db: {
+      idempotencyKey: {
+        findUnique: vi.fn(),
+        upsert: vi.fn().mockResolvedValue({}),
+      },
+    },
+  }))
+
   let idempotency: (req: Request, res: Response, next: NextFunction) => void
 
   beforeEach(async () => {
     vi.resetModules()
-    // Re-import after resetting so the global mock above takes effect
+    // Re-import after resetting so the mock above takes effect
     const mod = await import('../middleware/idempotency.js')
     idempotency = mod.idempotency
   })
@@ -176,6 +162,17 @@ describe('[regression] Auth token refresh race – single-use enforcement', () =
   const RAW_TOKEN = 'raw-refresh-token-value-abc123'
   const TOKEN_HASH = crypto.createHash('sha256').update(RAW_TOKEN).digest('hex')
 
+  vi.mock('../db.js', () => ({
+    db: {
+      refreshToken: {
+        findUnique: vi.fn(),
+        update: vi.fn().mockResolvedValue({}),
+        create: vi.fn().mockResolvedValue({}),
+      },
+      user: { findUnique: vi.fn() },
+    },
+  }))
+
   vi.mock('../repositories/user.repository.js', () => ({
     userRepository: {
       findById: vi.fn(),
@@ -232,7 +229,7 @@ describe('[regression] Auth token refresh race – single-use enforcement', () =
 
     const { rotateRefreshToken } = await import('../services/auth.service.js')
     const result = await rotateRefreshToken(RAW_TOKEN)
-    expect(result).toHaveProperty('token')
+    expect(result).toHaveProperty('accessToken')
     expect(result).toHaveProperty('refreshToken')
   })
 
@@ -296,6 +293,18 @@ describe('[regression] Auth token refresh race – single-use enforcement', () =
  * @regression Escrow pause bypass – resolve_dispute must respect paused state (#1028)
  */
 describe('[regression] Escrow pause bypass – resolve_dispute blocked when paused', () => {
+  vi.mock('../db.js', () => ({
+    db: {
+      escrowRecord: {
+        findUnique: vi.fn(),
+        update: vi.fn(),
+      },
+      systemConfig: {
+        findUnique: vi.fn(),
+      },
+    },
+  }))
+
   vi.mock('../services/notification.service.js', () => ({
     dispatchNotification: vi.fn().mockResolvedValue(undefined),
   }))

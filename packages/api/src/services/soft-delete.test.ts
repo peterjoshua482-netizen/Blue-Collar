@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { AppError } from '../utils/AppError.js'
+import { AppError } from './AppError.js'
 
 vi.mock('../db.js', () => ({
   db: {

@@ -42,7 +42,7 @@ export function validateAuthMethodForVersion(req: Request, res: Response, next: 
 
   // Store auth method info for later use
   const authMethod = authHeader.split(' ')[0]?.toLowerCase()
-  req.authMethod = authMethod
+  ;(req as any).authMethod = authMethod
 
   if (authMethod === 'apikey' && !isApiKeyAllowedForVersion(version)) {
     return res.status(400).json({
@@ -61,7 +61,7 @@ export function validateAuthMethodForVersion(req: Request, res: Response, next: 
  */
 export function requiredAuthLevel(level: 'authenticated' | 'curator' | 'admin') {
   return (req: Request, res: Response, next: NextFunction) => {
-    const user = req.user
+    const user = (req as any).user
 
     if (!user) {
       return res.status(401).json({
@@ -103,7 +103,7 @@ export function logAuthMethodUsage(req: Request, res: Response, next: NextFuncti
 
   if (authMethod) {
     // Could emit metrics here
-    req.authMetadata = {
+    ;(req as any).authMetadata = {
       version,
       method: authMethod,
       timestamp: new Date().toISOString(),

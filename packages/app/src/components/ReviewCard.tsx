@@ -2,7 +2,6 @@ import type { Review } from "@/types";
 import StarRating from "./StarRating";
 import ReviewHelpfulButton from "./ReviewHelpfulButton";
 import VerifiedTransactionBadge from "./VerifiedTransactionBadge";
-import { formatDate } from "@/lib/utils";
 
 interface ReviewCardProps {
   review: Review;
@@ -43,7 +42,11 @@ export default function ReviewCard({ review, showVerifiedBadge }: ReviewCardProp
             {showVerifiedBadge && <VerifiedTransactionBadge />}
           </div>
           <time dateTime={review.createdAt} className="text-xs text-gray-400 shrink-0">
-            {formatDate(review.createdAt)}
+            {new Date(review.createdAt).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
           </time>
         </div>
         <StarRating rating={review.rating} className="mt-0.5" />

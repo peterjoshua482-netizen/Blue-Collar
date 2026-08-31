@@ -1,29 +1,27 @@
 import type { Meta, StoryObj } from '@storybook/react'
-import { fn } from '@storybook/test'
 import OnboardingModal from '@/components/OnboardingModal'
 
 const meta: Meta<typeof OnboardingModal> = {
   title: 'Components/OnboardingModal',
   component: OnboardingModal,
   tags: ['autodocs'],
-  args: {
-    // Provide stubs so every story renders without errors.
-    onClose: fn(),
-    onComplete: fn(),
-  },
 }
 export default meta
 
 type Story = StoryObj<typeof OnboardingModal>
 
-export const Open: Story = {
+export const Default: Story = {
   args: {
     isOpen: true,
+    onClose: () => console.log('Onboarding closed'),
+    onComplete: () => console.log('Onboarding completed'),
   },
 }
 
 export const Closed: Story = {
   args: {
     isOpen: false,
+    onClose: () => console.log('Onboarding closed'),
+    onComplete: () => console.log('Onboarding completed'),
   },
 }
