@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Eye, EyeOff, Star, MapPin, Phone, Mail, Wallet } from "lucide-react";
-import { cn, formatStellarAddress } from "@/lib/utils";
+import { cn, formatWalletAddress } from "@/lib/utils";
 import type { PortfolioImage } from "@/components/PortfolioGallery";
 import VerificationBadges from "@/components/VerificationBadges";
 
@@ -122,7 +122,7 @@ export default function ProfilePreview({
               {walletAddress && (
                 <div className="flex items-center gap-1.5 text-xs text-gray-500">
                   <Wallet size={11} />
-                  <span>{formatStellarAddress(walletAddress)}</span>
+                  <span>{formatWalletAddress(walletAddress)}</span>
                 </div>
               )}
             </div>

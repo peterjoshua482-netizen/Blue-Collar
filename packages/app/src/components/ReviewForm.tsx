@@ -2,9 +2,8 @@
 
 import { useId, useRef, useState } from "react";
 import { Star, Loader2 } from "lucide-react";
-import { useCreateReview } from "@/hooks/queries";
+import { createReview } from "@/lib/api";
 import type { Review } from "@/types";
-import FormError from "@/components/FormError";
 
 interface ReviewFormProps {
   workerId: string;
@@ -26,14 +25,13 @@ export default function ReviewForm({ workerId, onReviewCreated }: ReviewFormProp
   const [rating, setRating] = useState(0);
   const [hovered, setHovered] = useState(0);
   const [comment, setComment] = useState("");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const groupId = useId();
   const commentId = useId();
   const errorId = useId();
   const starRefs = useRef<(HTMLButtonElement | null)[]>([]);
-
-  const createReview = useCreateReview(workerId);
 
   /** The star that owns the group's tab stop — the selection, or the first star. */
   const focusableStar = rating || 1;
@@ -67,19 +65,22 @@ export default function ReviewForm({ workerId, onReviewCreated }: ReviewFormProp
       starRefs.current[0]?.focus();
       return;
     }
+    setLoading(true);
     setError(null);
     try {
-      const res = await createReview.mutateAsync({ rating, comment: comment.trim() || undefined });
+      const res = await createReview(workerId, { rating, comment: comment.trim() || undefined });
       onReviewCreated(res.data);
       setRating(0);
       setComment("");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to submit review.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-3" aria-busy={createReview.isPending}>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3" aria-busy={loading}>
       {/* Star picker */}
       <span id={groupId} className="sr-only">
         Rating
@@ -134,16 +135,18 @@ export default function ReviewForm({ workerId, onReviewCreated }: ReviewFormProp
       />
 
       {error && (
-        <FormError id={errorId} message={error} />
+        <p id={errorId} role="alert" className="text-xs text-red-500">
+          {error}
+        </p>
       )}
 
       <button
         type="submit"
-        disabled={createReview.isPending}
+        disabled={loading}
         className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60 transition-colors"
       >
-        {createReview.isPending && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
-        {createReview.isPending ? "Submitting Review…" : "Submit Review"}
+        {loading && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
+        {loading ? "Submitting Review…" : "Submit Review"}
       </button>
     </form>
   );

@@ -1,17 +1,22 @@
-/**
- * User validation schemas for the API.
- * Core schemas are imported from @bluecollar/types to stay in sync with the App.
- */
 import { z } from 'zod'
+import { emailField, nameField, passwordField } from './shared.js'
 
-export {
-  updateProfileSchema as updateProfileRules,
-  changePasswordSchema as changePasswordRules,
-} from '@bluecollar/types'
+// PATCH /users/me
+export const updateProfileRules = z.object({
+  firstName: nameField.max(50).optional(),
+  lastName: nameField.max(50).optional(),
+  email: emailField.optional(),
+})
 
-// POST /users/me/push-subscription — API-only
+// PUT /users/me/password
+export const changePasswordRules = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: passwordField,
+})
+
+// POST /users/me/push-subscription
 export const pushSubscriptionRules = z.object({
-  endpoint: z.string().url('Must be a valid URL'),
+  endpoint: z.string().url(),
   keys: z.object({
     auth: z.string().min(1),
     p256dh: z.string().min(1),

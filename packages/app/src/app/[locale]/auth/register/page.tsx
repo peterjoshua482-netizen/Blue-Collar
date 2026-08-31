@@ -8,7 +8,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import { registerSchema, type RegisterInput, authApi } from "@/lib/auth";
 import FormField from "@/components/FormField";
-import FormError from "@/components/FormError";
 import PasswordStrength from "@/components/PasswordStrength";
 import { cn } from "@/lib/utils";
 
@@ -77,7 +76,9 @@ export default function RegisterPage() {
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
           {apiError && (
-            <FormError message={apiError} />
+            <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">
+              {apiError}
+            </div>
           )}
 
           <div className="grid grid-cols-2 gap-3">

@@ -5,36 +5,32 @@ import type { ReactNode, ChangeEvent } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X, Loader2, CheckCircle2, AlertCircle, ExternalLink, Zap } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useWallet, FreighterNotInstalledError, WalletNotConnectedError } from "@/hooks/useWallet";
-import { usePaymentFlow } from "@/context/PaymentFlowContext";
+import {
+  isConnected,
+  requestAccess,
+  getAddress,
+  signTransaction,
+} from "@stellar/freighter-api";
 import { cn } from "@/lib/utils";
 
-import { HORIZON_URL, SOROBAN_RPC_URL, EXPLORER_TX_BASE, NETWORK_PASSPHRASE } from "@/config/stellar";
-
+const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
+const HORIZON_URL = "https://horizon-testnet.stellar.org";
+const SOROBAN_RPC = "https://soroban-testnet.stellar.org";
 const STROOPS_PER_XLM = 10_000_000n;
+const EXPLORER_BASE = "https://stellar.expert/explorer/testnet/tx";
 const NETWORK_FEE = 0.00001;
 
 type TxStatus = "idle" | "signing" | "pending" | "success" | "error";
 type ErrorType = "freighter_missing" | "insufficient_balance" | "network_error" | "unknown";
 
 interface Props {
-  workerName?: string;
-  walletAddress?: string;
+  workerName: string;
+  walletAddress: string;
   trigger?: ReactNode;
 }
 
-export default function TipModal({ workerName: workerNameProp, walletAddress: walletAddressProp, trigger }: Props) {
+export default function TipModal({ workerName, walletAddress, trigger }: Props) {
   const t = useTranslations("tip");
-  const paymentFlow = usePaymentFlow();
-  const workerName = workerNameProp ?? paymentFlow?.workerName;
-  const walletAddress = walletAddressProp ?? paymentFlow?.walletAddress;
-  const { publicKey, networkPassphrase, connect, signTransaction } = useWallet();
-
-  if (!workerName || !walletAddress) {
-    throw new Error(
-      "TipModal requires workerName/walletAddress via props or a PaymentFlowProvider ancestor.",
-    );
-  }
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [selectedToken, setSelectedToken] = useState("XLM");
@@ -71,11 +67,8 @@ export default function TipModal({ workerName: workerNameProp, walletAddress: wa
     let failureType: ErrorType | null = null;
 
     try {
-      let senderAddress = publicKey;
-      if (!senderAddress) {
-        senderAddress = await connect();
-      }
-      if (!senderAddress) {
+      const connected = await isConnected();
+      if (!connected.isConnected) {
         setErrorType("freighter_missing");
         setErrorMsg(t("freighterNotFound"));
         setStatus("error");
@@ -83,12 +76,13 @@ export default function TipModal({ workerName: workerNameProp, walletAddress: wa
       }
 
       setStatus("pending");
+      await requestAccess();
+      const { address: senderAddress } = await getAddress();
 
-      const passphrase = networkPassphrase ?? NETWORK_PASSPHRASE;
       const amountInStroops = BigInt(Math.round(Number(amount) * Number(STROOPS_PER_XLM)));
-      const txXdr = await buildTipTxXdr(senderAddress, walletAddress, amountInStroops, passphrase);
+      const txXdr = await buildTipTxXdr(senderAddress, walletAddress, amountInStroops);
 
-      const buildRes = await fetch(`${SOROBAN_RPC_URL}`, {
+      const buildRes = await fetch(`${SOROBAN_RPC}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -108,7 +102,9 @@ export default function TipModal({ workerName: workerNameProp, walletAddress: wa
         throw new Error(errMsg);
       }
 
-      const signedTxXdr = await signTransaction(txXdr);
+      const { signedTxXdr } = await signTransaction(txXdr, {
+        networkPassphrase: NETWORK_PASSPHRASE,
+      });
 
       const submitRes = await fetch(`${HORIZON_URL}/transactions`, {
         method: "POST",
@@ -124,12 +120,6 @@ export default function TipModal({ workerName: workerNameProp, walletAddress: wa
       setTxHash(submitJson.hash);
       setStatus("success");
     } catch (err: unknown) {
-      if (err instanceof FreighterNotInstalledError || err instanceof WalletNotConnectedError) {
-        setErrorType("freighter_missing");
-        setErrorMsg(t("freighterNotFound"));
-        setStatus("error");
-        return;
-      }
       const msg = err instanceof Error ? err.message : "Unknown error";
       setErrorMsg(msg);
       setErrorType(failureType ?? "unknown");
@@ -272,7 +262,7 @@ export default function TipModal({ workerName: workerNameProp, walletAddress: wa
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t("successDescription", { name: workerName })}</p>
                 </div>
                 <a
-                  href={`${EXPLORER_TX_BASE}/${txHash}`}
+                  href={`${EXPLORER_BASE}/${txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-950/30 px-4 py-2 text-sm font-medium text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-950/50 transition-colors border border-green-200 dark:border-green-900"
@@ -388,18 +378,17 @@ export default function TipModal({ workerName: workerNameProp, walletAddress: wa
 async function buildTipTxXdr(
   from: string,
   to: string,
-  amountStroops: bigint,
-  networkPassphrase: string
+  amountStroops: bigint
 ): Promise<string> {
   const StellarSdk = await import("@stellar/stellar-sdk");
-  const { Server, TransactionBuilder, Operation, Asset, BASE_FEE } = StellarSdk;
+  const { TransactionBuilder, Operation, Asset, BASE_FEE } = StellarSdk;
 
-  const server = new Server(HORIZON_URL);
+  const server = new StellarSdk.Horizon.Server(HORIZON_URL);
   const account = await server.loadAccount(from);
 
   const tx = new TransactionBuilder(account, {
     fee: BASE_FEE,
-    networkPassphrase,
+    networkPassphrase: NETWORK_PASSPHRASE,
   })
     .addOperation(
       Operation.payment({

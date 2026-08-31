@@ -1,12 +1,35 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useProtocolMetrics } from '@/hooks/queries'
-import { formatDate } from '@/lib/utils'
+
+interface ProtocolMetrics {
+  timestamp: string
+  totalRegistrations: number
+  activeWorkers: number
+  totalTipVolume: number
+  totalTipCount: number
+  totalEscrowVolume: number
+  activeEscrows: number
+  totalDisputes: number
+  resolvedDisputes: number
+  dataFreshness: string
+}
 
 export default function StatsPage() {
-  const { data: metrics, isLoading: loading } = useProtocolMetrics()
+  const [metrics, setMetrics] = useState<ProtocolMetrics | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/analytics/metrics')
+      .then((res) => res.json())
+      .then((data) => {
+        setMetrics(data.data)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
 
   if (loading) {
     return (
@@ -32,7 +55,7 @@ export default function StatsPage() {
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Protocol Health Dashboard</h1>
         <span className="text-sm text-muted-foreground">
-          Last updated: {formatDate(metrics.dataFreshness, { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+          Last updated: {new Date(metrics.dataFreshness).toLocaleString()}
         </span>
       </div>
 

@@ -8,7 +8,11 @@ interface FriendbotBannerProps {
   xlmBalance: number;
 }
 
-import { FRIENDBOT_URL, IS_TESTNET } from "@/config/stellar";
+const FRIENDBOT_URL = "https://friendbot.stellar.org";
+
+function isTestnet() {
+  return process.env.NEXT_PUBLIC_STELLAR_NETWORK?.toLowerCase() === "testnet";
+}
 
 export default function FriendbotBanner({ walletAddress, xlmBalance }: FriendbotBannerProps) {
   const [dismissed, setDismissed] = useState(false);
@@ -20,7 +24,7 @@ export default function FriendbotBanner({ walletAddress, xlmBalance }: Friendbot
     setTimeout(() => setToast(""), 4000);
   };
 
-  if (!IS_TESTNET || xlmBalance > 0) return null;
+  if (!isTestnet() || xlmBalance > 0) return null;
 
   const handleFund = async () => {
     if (!walletAddress) return;

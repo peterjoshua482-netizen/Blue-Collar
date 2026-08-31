@@ -5,16 +5,18 @@
  * Usage: npx tsx src/database/migration-test.ts
  */
 
-import { db } from '../db.js';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 async function run() {
   console.log('Running migration smoke tests...');
 
   // 1. Verify tables exist by running a count on each model
   const checks: Array<[string, () => Promise<number>]> = [
-    ['User',     () => db.user.count()],
-    ['Worker',   () => db.worker.count()],
-    ['Category', () => db.category.count()],
+    ['User',     () => prisma.user.count()],
+    ['Worker',   () => prisma.worker.count()],
+    ['Category', () => prisma.category.count()],
   ];
 
   for (const [model, query] of checks) {
@@ -29,7 +31,7 @@ async function run() {
 
   // 2. Verify indexes by running a filtered query
   try {
-    await db.user.findFirst({ where: { email: 'smoke-test@example.com' } });
+    await prisma.user.findFirst({ where: { email: 'smoke-test@example.com' } });
     console.log('  ✓ User email index accessible');
   } catch (err) {
     console.error('  ✗ User email index check failed:', err);
@@ -41,4 +43,4 @@ async function run() {
 
 run()
   .catch((err) => { console.error(err); process.exit(1); })
-  .finally(() => db.$disconnect());
+  .finally(() => prisma.$disconnect());

@@ -1,12 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useTransactionFilters } from "./useTransactionFilters";
-import { useTransactionPolling } from "./useTransactionPolling";
 
-import { HORIZON_URL } from "@/config/stellar";
-
-const HORIZON = HORIZON_URL;
+const HORIZON = "https://horizon-testnet.stellar.org";
 const DEFAULT_PAGE_SIZE = 10;
 
 /** Horizon caps a payments page at 200 records. */
@@ -19,8 +15,6 @@ export interface TransactionListItem {
   from: string;
   amount: string;
   transactionHash: string;
-  /** Raw asset type returned by Horizon (e.g. "native"). */
-  assetType: string;
 }
 
 interface HorizonPayment {
@@ -36,19 +30,13 @@ interface HorizonPayment {
 export interface UseTransactionListOptions {
   /** Account whose incoming payments to list. */
   walletAddress: string;
-  /**
-   * When set, only payments originating from this contract are kept.
-   * @deprecated Prefer `filterOptions.fromAddress` via the returned
-   *   `setFilterOptions` for runtime-adjustable filters.
-   */
+  /** When set, only payments originating from this contract are kept. */
   marketContractId?: string;
   pageSize?: number;
-  /** Poll for new transactions every N milliseconds. Defaults to 0 (no polling). */
-  pollingIntervalMs?: number;
 }
 
 export interface UseTransactionListResult {
-  /** The current page of (filtered) transactions. */
+  /** The current page of transactions. */
   transactions: TransactionListItem[];
   page: number;
   setPage: (page: number) => void;
@@ -67,15 +55,11 @@ function toTransaction(record: HorizonPayment): TransactionListItem {
     from: record.from,
     amount: record.amount,
     transactionHash: record.transaction_hash,
-    assetType: record.asset_type,
   };
 }
 
 /**
  * Loads native incoming payments for an account from Horizon.
- *
- * Composes {@link useTransactionFilters} for client-side filtering and
- * {@link useTransactionPolling} for optional background refresh.
  *
  * Horizon is queried once per account (and per market contract); paging is
  * then applied to the cached result, so moving between pages no longer
@@ -85,9 +69,8 @@ export function useTransactionList({
   walletAddress,
   marketContractId,
   pageSize = DEFAULT_PAGE_SIZE,
-  pollingIntervalMs = 0,
 }: UseTransactionListOptions): UseTransactionListResult {
-  const [rawTransactions, setRawTransactions] = useState<TransactionListItem[]>([]);
+  const [allTransactions, setAllTransactions] = useState<TransactionListItem[]>([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -106,43 +89,28 @@ export function useTransactionList({
       const json = await res.json();
       const records: HorizonPayment[] = json._embedded?.records ?? [];
 
-      // Keep only incoming payments; marketContractId is the legacy filter.
       const incoming = records.filter(
         (r) =>
           r.type === "payment" &&
+          r.asset_type === "native" &&
           r.from !== walletAddress &&
-          (marketContractId ? r.from === marketContractId : true),
+          (marketContractId ? r.from === marketContractId : true)
       );
 
-      setRawTransactions(incoming.map(toTransaction));
+      setAllTransactions(incoming.map(toTransaction));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
-      setRawTransactions([]);
+      setAllTransactions([]);
     } finally {
       setLoading(false);
     }
   }, [walletAddress, marketContractId]);
 
-  // Initial load and re-fetch whenever the account changes.
   useEffect(() => {
+    // A different account is a different list; start from the first page.
     setPage(1);
     void fetchTransactions();
   }, [fetchTransactions]);
-
-  // Optional background polling — delegated to useTransactionPolling.
-  useTransactionPolling(fetchTransactions, {
-    intervalMs: pollingIntervalMs,
-    enabled: pollingIntervalMs > 0,
-  });
-
-  // Client-side asset-type filtering — delegated to useTransactionFilters.
-  const getFrom = useCallback((item: TransactionListItem) => item.from, []);
-  const getAssetType = useCallback((item: TransactionListItem) => item.assetType, []);
-  const { filtered: allTransactions } = useTransactionFilters(
-    rawTransactions,
-    getFrom,
-    getAssetType,
-  );
 
   const total = allTransactions.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));

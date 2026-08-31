@@ -9,11 +9,8 @@
  *   const info = await sdk.horizon.getAccountInfo(publicKey)
  */
 
-// Core clients
 export { HorizonClient, SdkError } from './horizon.client.js'
 export { RegistryClient } from './registry.client.js'
-
-// Types
 export type * from './types.js'
 
 import { HorizonClient } from './horizon.client.js'

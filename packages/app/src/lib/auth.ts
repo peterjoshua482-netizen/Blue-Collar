@@ -1,28 +1,20 @@
 import { z } from "zod";
-import {
-  loginSchema,
-  forgotPasswordSchema,
-  passwordField,
-  emailField,
-  nameField,
-} from "@bluecollar/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000/api";
 
-// ─── Re-export shared schemas ─────────────────────────────────────────────────
+// ─── Zod schemas ─────────────────────────────────────────────────────────────
 
-export { loginSchema, forgotPasswordSchema };
+export const loginSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(1, "Password is required"),
+});
 
-/**
- * Register schema extends the shared base with a UI-only confirmPassword field.
- * The API receives only the shared fields (confirmPassword is stripped client-side).
- */
 export const registerSchema = z
   .object({
-    firstName: nameField,
-    lastName: nameField,
-    email: emailField,
-    password: passwordField,
+    firstName: z.string().min(1, "First name is required"),
+    lastName: z.string().min(1, "Last name is required"),
+    email: z.string().email("Invalid email address"),
+    password: z.string().min(8, "Password must be at least 8 characters"),
     confirmPassword: z.string().min(1, "Please confirm your password"),
   })
   .refine((d) => d.password === d.confirmPassword, {
@@ -30,12 +22,13 @@ export const registerSchema = z
     path: ["confirmPassword"],
   });
 
-/**
- * Reset-password schema extends the shared base with a UI-only confirmPassword field.
- */
+export const forgotPasswordSchema = z.object({
+  email: z.string().email("Invalid email address"),
+});
+
 export const resetPasswordSchema = z
   .object({
-    password: passwordField,
+    password: z.string().min(8, "Password must be at least 8 characters"),
     confirmPassword: z.string().min(1, "Please confirm your password"),
   })
   .refine((d) => d.password === d.confirmPassword, {
@@ -57,7 +50,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   const json = await res.json();
-  if (!res.ok) throw new Error((json as { message?: string }).message ?? "Something went wrong");
+  if (!res.ok) throw new Error(json.message ?? "Something went wrong");
   return json as T;
 }
 
@@ -68,7 +61,7 @@ async function put<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   const json = await res.json();
-  if (!res.ok) throw new Error((json as { message?: string }).message ?? "Something went wrong");
+  if (!res.ok) throw new Error(json.message ?? "Something went wrong");
   return json as T;
 }
 

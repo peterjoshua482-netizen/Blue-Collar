@@ -1,4 +1,3 @@
-import type { InteractionType } from '@prisma/client'
 import { db } from '../db.js'
 import { redis } from '../config/redis.js'
 import { formatWorker } from '../models/worker.model.js'
@@ -8,7 +7,7 @@ const INTERACTION_WEIGHTS: Record<string, number> = { view: 1, bookmark: 3, tip:
 
 /** Track a user interaction with a worker */
 export async function trackInteraction(userId: string, workerId: string, type: string) {
-  await db.userInteraction.create({ data: { userId, workerId, type: type as InteractionType } })
+  await db.userInteraction.create({ data: { userId, workerId, type: type as any } })
   // Invalidate cached recommendations for this user
   await redis.del(`recommendations:${userId}`).catch(() => {})
 }
@@ -129,7 +128,7 @@ export async function getRecommendations(userId: string, limit = 10) {
   })
 
   scored.sort((a, b) => b.score - a.score)
-  const top = scored.slice(0, limit).map((s) => formatWorker(s.worker))
+  const top = scored.slice(0, limit).map((s) => formatWorker(s.worker as any))
 
   const result = { data: top, source: 'collaborative' }
   await redis.setex(cacheKey, CACHE_TTL, JSON.stringify(result)).catch(() => {})

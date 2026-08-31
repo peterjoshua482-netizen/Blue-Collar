@@ -1,5 +1,5 @@
 import { beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
-import { db } from '../db.js';
+import { PrismaClient } from '@prisma/client';
 
 // Set test environment variables
 process.env.NODE_ENV = 'test';
@@ -9,21 +9,32 @@ process.env.REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379/1';
 process.env.APP_URL = 'http://localhost:3000';
 
 // Prisma is only used for integration/e2e tests that have a real DB.
-// Unit tests mock the DB, so we use the centralized client lazily and swallow
+// Unit tests mock the DB, so we create the client lazily and swallow
 // connection errors so the suite doesn't crash in environments without a DB.
-let prisma = db;
+let prisma: PrismaClient;
+try {
+  prisma = new PrismaClient();
+} catch {
+  prisma = null as unknown as PrismaClient;
+}
 
 beforeAll(async () => {
-  // No need to connect — db is already connected
+  if (!prisma) return;
   try {
-    console.log('Test database using centralized connection');
+    await prisma.$connect();
+    console.log('Test database connected');
   } catch {
     // No DB available — unit tests that mock the DB will still run fine
   }
 });
 
 afterAll(async () => {
-  // No need to disconnect — lifecycle managed by db module
+  if (!prisma) return;
+  try {
+    await prisma.$disconnect();
+  } catch {
+    // ignore
+  }
 });
 
 beforeEach(async () => {

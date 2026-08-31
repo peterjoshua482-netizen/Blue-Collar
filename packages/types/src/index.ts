@@ -1,13 +1,11 @@
-// ─── Core domain types ────────────────────────────────────────────────────────
 // ─── API Response Contracts ───────────────────────────────────────────────────
 
 /** Standard API envelope returned by all endpoints. */
 export interface ApiResponse<T = undefined> {
-  data?: T;
-  meta?: Meta;
-  status: "success" | "error" | string;
+  status: "success" | "error";
+  message: string;
   code: number;
-  message?: string;
+  data?: T;
   token?: string;
 }
 
@@ -23,9 +21,6 @@ export interface PaginatedResult<T> {
   data: T[];
   meta: Meta;
 }
-
-/** Paginated list response. */
-export type PaginatedResponse<T> = ApiResponse<T[]> & { meta: Meta };
 
 // ─── Auth DTOs ────────────────────────────────────────────────────────────────
 
@@ -50,10 +45,8 @@ export interface ResetPasswordDTO {
   password: string;
 }
 
-// ─── Auth types ───────────────────────────────────────────────────────────────
-
-/** Authenticated user shape returned from /auth/me and stored in AuthContext. */
-export interface User {
+/** Authenticated user shape returned from /auth/me. */
+export interface AuthUser {
   id: string;
   email: string;
   firstName: string;
@@ -62,12 +55,7 @@ export interface User {
   verified: boolean;
   avatar?: string | null;
   onboardingCompleted?: boolean;
-  createdAt?: string | Date;
-  updatedAt?: string | Date;
 }
-
-/** Alias for backward compatibility */
-export interface AuthUser extends User {}
 
 // ─── Category ─────────────────────────────────────────────────────────────────
 
@@ -98,16 +86,12 @@ export interface Worker {
   latitude?: number | null;
   longitude?: number | null;
   isVerified: boolean;
-  isActive: boolean;
   locationId?: string | null;
   walletAddress?: string | null;
-  categoryId?: string;
   category: Category;
   averageRating?: number | null;
   reviewCount?: number;
   portfolioImages?: PortfolioImage[];
-  createdAt?: string | Date;
-  updatedAt?: string | Date;
 }
 
 export interface CreateWorkerDTO {
@@ -142,73 +126,6 @@ export interface Review {
 export interface CreateReviewDTO {
   rating: number;
   comment?: string;
-}
-
-export interface RatingDistributionEntry {
-  rating: number;
-  count: number;
-  percentage: number;
-}
-
-// ─── Form types ───────────────────────────────────────────────────────────────
-
-export interface LoginForm {
-  email: string;
-  password: string;
-}
-
-export interface RegisterForm {
-  email: string;
-  password: string;
-  firstName: string;
-  lastName: string;
-}
-
-export interface WorkerForm {
-  name: string;
-  bio?: string;
-  phone?: string;
-  email?: string;
-  location?: string;
-  categoryId: string;
-  walletAddress?: string;
-}
-
-// ─── Stellar/SDK types ───────────────────────────────────────────────────────
-
-export interface AccountInfo {
-  publicKey: string;
-  balance: number;
-  sequence: bigint;
-}
-
-export interface BroadcastResult {
-  txHash: string;
-  txId: string;
-}
-
-export interface TxStatus {
-  status: 'pending' | 'confirmed' | 'failed';
-  resultCode?: string;
-}
-
-export interface WorkerRegistration {
-  workerId: string;
-  contractId: string;
-}
-
-export interface ReputationSync {
-  workerId: string;
-  avgRating: number;
-  reviewCount: number;
-  reputation: number;
-}
-
-export interface SdkConfig {
-  horizonUrl: string;
-  registryContractId?: string;
-  marketContractId?: string;
-  network: 'testnet' | 'mainnet';
 }
 
 // ─── Notifications ────────────────────────────────────────────────────────────
@@ -326,6 +243,12 @@ export interface WorkerAnalytics {
   updatedAt: string | null;
 }
 
+export interface RatingDistributionEntry {
+  rating: number;
+  count: number;
+  percentage: number;
+}
+
 // ─── Audit Log ────────────────────────────────────────────────────────────────
 
 export interface AuditLogEntry {
@@ -338,6 +261,3 @@ export interface AuditLogEntry {
   createdAt: string;
   user?: { id: string; firstName: string; lastName: string; email: string } | null;
 }
-
-// ─── Shared Validation Schemas ────────────────────────────────────────────────
-export * from './validations.js'

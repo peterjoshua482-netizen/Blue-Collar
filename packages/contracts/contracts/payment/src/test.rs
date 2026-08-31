@@ -15,9 +15,8 @@
 extern crate std;
 
 use super::*;
-use bluecollar_types::test_utils::set_time;
 use soroban_sdk::{
-    testutils::Address as _,
+    testutils::{Address as _, Ledger, LedgerInfo},
     token::{Client as TokenClient, StellarAssetClient},
     Address, Env, Symbol,
 };
@@ -61,6 +60,19 @@ fn init(
     client.grant_role(admin, &Symbol::new(env, ROLE_PAUSER), admin);
 }
 
+fn set_time(env: &Env, ts: u64) {
+    env.ledger().set(LedgerInfo {
+        timestamp: ts,
+        protocol_version: 22,
+        sequence_number: 100,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 1_000_000,
+    });
+}
+
 // ---------------------------------------------------------------------------
 // initialize
 // ---------------------------------------------------------------------------
@@ -78,20 +90,20 @@ fn test_initialize_success() {
 }
 
 #[test]
+#[should_panic(expected = "Already initialized")]
 fn test_initialize_twice_panics() {
     let (env, admin, fee_recipient, _, _, _) = setup_env();
     let (_, client) = deploy(&env);
     init(&env, &client, &admin, 100, &fee_recipient);
-    let res = client.try_initialize(&admin, &100, &fee_recipient);
-    assert_eq!(res, Err(Ok(ContractError::AlreadyInitialized)));
+    client.initialize(&admin, &100, &fee_recipient);
 }
 
 #[test]
+#[should_panic(expected = "fee_bps exceeds maximum (500)")]
 fn test_initialize_fee_too_high() {
     let (env, admin, fee_recipient, _, _, _) = setup_env();
     let (_, client) = deploy(&env);
-    let res = client.try_initialize(&admin, &501, &fee_recipient);
-    assert_eq!(res, Err(Ok(ContractError::FeeBpsExceedsMaximum)));
+    client.initialize(&admin, &501, &fee_recipient);
 }
 
 // ---------------------------------------------------------------------------
@@ -129,31 +141,31 @@ fn test_pay_zero_fee() {
 }
 
 #[test]
+#[should_panic(expected = "Amount must be positive")]
 fn test_pay_zero_amount_panics() {
     let (env, admin, fee_recipient, client_addr, worker, token) = setup_env();
     let (_, pmt) = deploy(&env);
     init(&env, &pmt, &admin, 100, &fee_recipient);
-    let res = pmt.try_pay(&client_addr, &worker, &token, &0);
-    assert_eq!(res, Err(Ok(ContractError::AmountMustBePositive)));
+    pmt.pay(&client_addr, &worker, &token, &0);
 }
 
 #[test]
+#[should_panic(expected = "Amount must be positive")]
 fn test_pay_negative_amount_panics() {
     let (env, admin, fee_recipient, client_addr, worker, token) = setup_env();
     let (_, pmt) = deploy(&env);
     init(&env, &pmt, &admin, 100, &fee_recipient);
-    let res = pmt.try_pay(&client_addr, &worker, &token, &-1);
-    assert_eq!(res, Err(Ok(ContractError::AmountMustBePositive)));
+    pmt.pay(&client_addr, &worker, &token, &-1);
 }
 
 #[test]
+#[should_panic(expected = "Contract is paused")]
 fn test_pay_while_paused_panics() {
     let (env, admin, fee_recipient, client_addr, worker, token) = setup_env();
     let (_, pmt) = deploy(&env);
     init(&env, &pmt, &admin, 100, &fee_recipient);
     pmt.pause(&admin);
-    let res = pmt.try_pay(&client_addr, &worker, &token, &1_000);
-    assert_eq!(res, Err(Ok(ContractError::ContractIsPaused)));
+    pmt.pay(&client_addr, &worker, &token, &1_000);
 }
 
 // ---------------------------------------------------------------------------
@@ -180,41 +192,28 @@ fn test_lock_payment_success() {
 }
 
 #[test]
+#[should_panic(expected = "Amount must be positive")]
 fn test_lock_payment_zero_amount_panics() {
     let (env, admin, fee_recipient, client_addr, worker, token) = setup_env();
     let (_, pmt) = deploy(&env);
     init(&env, &pmt, &admin, 0, &fee_recipient);
     set_time(&env, 1_000);
-    let res = pmt.try_lock_payment(
-        &client_addr,
-        &worker,
-        &token,
-        &Symbol::new(&env, "p1"),
-        &0,
-        &2_000,
-    );
-    assert_eq!(res, Err(Ok(ContractError::AmountMustBePositive)));
+    pmt.lock_payment(&client_addr, &worker, &token, &Symbol::new(&env, "p1"), &0, &2_000);
 }
 
 #[test]
+#[should_panic(expected = "expiry must be in future")]
 fn test_lock_payment_expired_expiry_panics() {
     let (env, admin, fee_recipient, client_addr, worker, token) = setup_env();
     let (_, pmt) = deploy(&env);
     init(&env, &pmt, &admin, 0, &fee_recipient);
     set_time(&env, 5_000);
     // expiry (1000) < now (5000)
-    let res = pmt.try_lock_payment(
-        &client_addr,
-        &worker,
-        &token,
-        &Symbol::new(&env, "p1"),
-        &1_000,
-        &1_000,
-    );
-    assert_eq!(res, Err(Ok(ContractError::ExpiryMustBeInFuture)));
+    pmt.lock_payment(&client_addr, &worker, &token, &Symbol::new(&env, "p1"), &1_000, &1_000);
 }
 
 #[test]
+#[should_panic(expected = "Already exists")]
 fn test_lock_payment_duplicate_panics() {
     let (env, admin, fee_recipient, client_addr, worker, token) = setup_env();
     let (_, pmt) = deploy(&env);
@@ -222,26 +221,18 @@ fn test_lock_payment_duplicate_panics() {
     set_time(&env, 1_000);
     let id = Symbol::new(&env, "p1");
     pmt.lock_payment(&client_addr, &worker, &token, &id, &1_000, &9_000);
-    let res = pmt.try_lock_payment(&client_addr, &worker, &token, &id, &1_000, &9_000);
-    assert_eq!(res, Err(Ok(ContractError::AlreadyExists)));
+    pmt.lock_payment(&client_addr, &worker, &token, &id, &1_000, &9_000);
 }
 
 #[test]
+#[should_panic(expected = "Contract is paused")]
 fn test_lock_payment_while_paused_panics() {
     let (env, admin, fee_recipient, client_addr, worker, token) = setup_env();
     let (_, pmt) = deploy(&env);
     init(&env, &pmt, &admin, 0, &fee_recipient);
     set_time(&env, 1_000);
     pmt.pause(&admin);
-    let res = pmt.try_lock_payment(
-        &client_addr,
-        &worker,
-        &token,
-        &Symbol::new(&env, "p1"),
-        &1_000,
-        &9_000,
-    );
-    assert_eq!(res, Err(Ok(ContractError::ContractIsPaused)));
+    pmt.lock_payment(&client_addr, &worker, &token, &Symbol::new(&env, "p1"), &1_000, &9_000);
 }
 
 // ---------------------------------------------------------------------------
@@ -282,6 +273,7 @@ fn test_release_payment_by_admin() {
 }
 
 #[test]
+#[should_panic(expected = "Not authorized")]
 fn test_release_payment_by_stranger_panics() {
     let (env, admin, fee_recipient, client_addr, worker, token) = setup_env();
     let (_, pmt) = deploy(&env);
@@ -291,11 +283,11 @@ fn test_release_payment_by_stranger_panics() {
     let stranger = Address::generate(&env);
     let id = Symbol::new(&env, "p1");
     pmt.lock_payment(&client_addr, &worker, &token, &id, &4_000, &9_000);
-    let res = pmt.try_release_payment(&stranger, &id);
-    assert_eq!(res, Err(Ok(ContractError::NotAuthorized)));
+    pmt.release_payment(&stranger, &id);
 }
 
 #[test]
+#[should_panic(expected = "Payment not locked")]
 fn test_release_payment_already_released_panics() {
     let (env, admin, fee_recipient, client_addr, worker, token) = setup_env();
     let (_, pmt) = deploy(&env);
@@ -305,17 +297,16 @@ fn test_release_payment_already_released_panics() {
     let id = Symbol::new(&env, "p1");
     pmt.lock_payment(&client_addr, &worker, &token, &id, &4_000, &9_000);
     pmt.release_payment(&client_addr, &id);
-    let res = pmt.try_release_payment(&client_addr, &id); // second call must fail
-    assert_eq!(res, Err(Ok(ContractError::PaymentNotLocked)));
+    pmt.release_payment(&client_addr, &id); // second call must fail
 }
 
 #[test]
+#[should_panic(expected = "Payment not found")]
 fn test_release_payment_not_found_panics() {
     let (env, admin, fee_recipient, client_addr, _, _) = setup_env();
     let (_, pmt) = deploy(&env);
     init(&env, &pmt, &admin, 0, &fee_recipient);
-    let res = pmt.try_release_payment(&client_addr, &Symbol::new(&env, "ghost"));
-    assert_eq!(res, Err(Ok(ContractError::PaymentNotFound)));
+    pmt.release_payment(&client_addr, &Symbol::new(&env, "ghost"));
 }
 
 // ---------------------------------------------------------------------------
@@ -359,6 +350,7 @@ fn test_refund_payment_by_client_after_expiry() {
 }
 
 #[test]
+#[should_panic(expected = "Not authorized")]
 fn test_refund_payment_by_client_before_expiry_panics() {
     let (env, admin, fee_recipient, client_addr, worker, token) = setup_env();
     let (_, pmt) = deploy(&env);
@@ -369,11 +361,11 @@ fn test_refund_payment_by_client_before_expiry_panics() {
     pmt.lock_payment(&client_addr, &worker, &token, &id, &3_000, &9_000);
 
     // Time is before expiry — client cannot refund yet
-    let res = pmt.try_refund_payment(&client_addr, &id);
-    assert_eq!(res, Err(Ok(ContractError::NotAuthorized)));
+    pmt.refund_payment(&client_addr, &id);
 }
 
 #[test]
+#[should_panic(expected = "Not authorized")]
 fn test_refund_payment_by_stranger_panics() {
     let (env, admin, fee_recipient, client_addr, worker, token) = setup_env();
     let (_, pmt) = deploy(&env);
@@ -383,11 +375,11 @@ fn test_refund_payment_by_stranger_panics() {
     let stranger = Address::generate(&env);
     let id = Symbol::new(&env, "p1");
     pmt.lock_payment(&client_addr, &worker, &token, &id, &3_000, &9_000);
-    let res = pmt.try_refund_payment(&stranger, &id);
-    assert_eq!(res, Err(Ok(ContractError::NotAuthorized)));
+    pmt.refund_payment(&stranger, &id);
 }
 
 #[test]
+#[should_panic(expected = "Payment not locked")]
 fn test_refund_payment_already_refunded_panics() {
     let (env, admin, fee_recipient, client_addr, worker, token) = setup_env();
     let (_, pmt) = deploy(&env);
@@ -397,17 +389,16 @@ fn test_refund_payment_already_refunded_panics() {
     let id = Symbol::new(&env, "p1");
     pmt.lock_payment(&client_addr, &worker, &token, &id, &3_000, &9_000);
     pmt.refund_payment(&admin, &id);
-    let res = pmt.try_refund_payment(&admin, &id); // second refund must fail
-    assert_eq!(res, Err(Ok(ContractError::PaymentNotLocked)));
+    pmt.refund_payment(&admin, &id); // second refund must fail
 }
 
 #[test]
+#[should_panic(expected = "Payment not found")]
 fn test_refund_payment_not_found_panics() {
     let (env, admin, fee_recipient, _, _, _) = setup_env();
     let (_, pmt) = deploy(&env);
     init(&env, &pmt, &admin, 0, &fee_recipient);
-    let res = pmt.try_refund_payment(&admin, &Symbol::new(&env, "ghost"));
-    assert_eq!(res, Err(Ok(ContractError::PaymentNotFound)));
+    pmt.refund_payment(&admin, &Symbol::new(&env, "ghost"));
 }
 
 // ---------------------------------------------------------------------------
@@ -425,22 +416,22 @@ fn test_update_fee_success() {
 }
 
 #[test]
+#[should_panic(expected = "fee_bps exceeds maximum (500)")]
 fn test_update_fee_too_high_panics() {
     let (env, admin, fee_recipient, _, _, _) = setup_env();
     let (_, pmt) = deploy(&env);
     init(&env, &pmt, &admin, 100, &fee_recipient);
-    let res = pmt.try_update_fee(&admin, &501);
-    assert_eq!(res, Err(Ok(ContractError::FeeBpsExceedsMaximum)));
+    pmt.update_fee(&admin, &501);
 }
 
 #[test]
+#[should_panic(expected = "Missing role")]
 fn test_update_fee_unauthorized_panics() {
     let (env, admin, fee_recipient, _, _, _) = setup_env();
     let (_, pmt) = deploy(&env);
     init(&env, &pmt, &admin, 100, &fee_recipient);
     let attacker = Address::generate(&env);
-    let res = pmt.try_update_fee(&attacker, &50);
-    assert_eq!(res, Err(Ok(ContractError::MissingRole)));
+    pmt.update_fee(&attacker, &50);
 }
 
 // ---------------------------------------------------------------------------
@@ -459,13 +450,13 @@ fn test_set_treasury_success() {
 }
 
 #[test]
+#[should_panic(expected = "Missing role")]
 fn test_set_treasury_unauthorized_panics() {
     let (env, admin, fee_recipient, _, _, _) = setup_env();
     let (_, pmt) = deploy(&env);
     init(&env, &pmt, &admin, 100, &fee_recipient);
     let attacker = Address::generate(&env);
-    let res = pmt.try_set_treasury(&attacker, &Address::generate(&env));
-    assert_eq!(res, Err(Ok(ContractError::MissingRole)));
+    pmt.set_treasury(&attacker, &Address::generate(&env));
 }
 
 // ---------------------------------------------------------------------------
@@ -486,13 +477,13 @@ fn test_pause_and_unpause() {
 }
 
 #[test]
+#[should_panic(expected = "Missing role")]
 fn test_pause_unauthorized_panics() {
     let (env, admin, fee_recipient, _, _, _) = setup_env();
     let (_, pmt) = deploy(&env);
     init(&env, &pmt, &admin, 0, &fee_recipient);
     let attacker = Address::generate(&env);
-    let res = pmt.try_pause(&attacker);
-    assert_eq!(res, Err(Ok(ContractError::MissingRole)));
+    pmt.pause(&attacker);
 }
 
 // ---------------------------------------------------------------------------
@@ -516,13 +507,13 @@ fn test_grant_and_revoke_role() {
 }
 
 #[test]
+#[should_panic(expected = "Missing role")]
 fn test_grant_role_unauthorized_panics() {
     let (env, admin, fee_recipient, _, _, _) = setup_env();
     let (_, pmt) = deploy(&env);
     init(&env, &pmt, &admin, 0, &fee_recipient);
     let attacker = Address::generate(&env);
-    let res = pmt.try_grant_role(&attacker, &Symbol::new(&env, ROLE_FEE_MGR), &attacker);
-    assert_eq!(res, Err(Ok(ContractError::MissingRole)));
+    pmt.grant_role(&attacker, &Symbol::new(&env, ROLE_FEE_MGR), &attacker);
 }
 
 // ---------------------------------------------------------------------------
@@ -530,12 +521,12 @@ fn test_grant_role_unauthorized_panics() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[should_panic(expected = "Payment not found")]
 fn test_get_payment_not_found_panics() {
     let (env, admin, fee_recipient, _, _, _) = setup_env();
     let (_, pmt) = deploy(&env);
     init(&env, &pmt, &admin, 0, &fee_recipient);
-    let res = pmt.try_get_payment(&Symbol::new(&env, "missing"));
-    assert_eq!(res, Err(Ok(ContractError::PaymentNotFound)));
+    pmt.get_payment(&Symbol::new(&env, "missing"));
 }
 
 // ---------------------------------------------------------------------------

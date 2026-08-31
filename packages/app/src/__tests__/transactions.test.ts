@@ -31,8 +31,8 @@ vi.mock("@stellar/stellar-sdk", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@stellar/stellar-sdk")>();
   return {
     ...actual,
-    Transaction: {
-      ...actual.Transaction,
+    TransactionBuilder: {
+      ...actual.TransactionBuilder,
       fromXDR: (...args: unknown[]) => mockFromXDR(...args),
     },
     // Keep StrKey real (not mocked)

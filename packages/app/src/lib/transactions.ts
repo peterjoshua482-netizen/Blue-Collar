@@ -11,35 +11,23 @@
  */
 
 import * as StellarSdk from "@stellar/stellar-sdk";
-import {
-  HORIZON_URL,
-  SOROBAN_RPC_URL,
-  EXPLORER_TX_BASE,
-  NETWORK_PASSPHRASE,
-} from "@/config/stellar";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/**
- * Network configuration table.  Runtime URLs are sourced from
- * src/config/stellar.ts which reads NEXT_PUBLIC_STELLAR_* environment
- * variables, so testnet/mainnet switching requires only an env-var change.
- * Closes #1207
- */
 export const NETWORKS = {
   TESTNET: {
     passphrase: "Test SDF Network ; September 2015",
-    horizonUrl: HORIZON_URL,
-    sorobanRpc: SOROBAN_RPC_URL,
-    explorer: `${EXPLORER_TX_BASE}`,
+    horizonUrl: "https://horizon-testnet.stellar.org",
+    sorobanRpc: "https://soroban-testnet.stellar.org",
+    explorer: "https://stellar.expert/explorer/testnet/tx",
   },
   MAINNET: {
     passphrase: "Public Global Stellar Network ; September 2015",
-    horizonUrl: HORIZON_URL,
-    sorobanRpc: SOROBAN_RPC_URL,
-    explorer: `${EXPLORER_TX_BASE}`,
+    horizonUrl: "https://horizon.stellar.org",
+    sorobanRpc: "https://soroban-mainnet.stellar.org",
+    explorer: "https://stellar.expert/explorer/public/tx",
   },
 } as const;
 
@@ -199,7 +187,7 @@ export function buildTransactionSummary(
   xdr: string,
   networkPassphrase: string
 ): TransactionSummary {
-  const tx = StellarSdk.Transaction.fromXDR(xdr, networkPassphrase);
+  const tx = StellarSdk.TransactionBuilder.fromXDR(xdr, networkPassphrase);
   const ops = tx.operations;
 
   const networkName =
@@ -277,11 +265,11 @@ export function assertXdrNotTampered(
   let signed: StellarSdk.Transaction | StellarSdk.FeeBumpTransaction;
 
   try {
-    original = StellarSdk.Transaction.fromXDR(
+    original = StellarSdk.TransactionBuilder.fromXDR(
       originalXdr,
       networkPassphrase
     );
-    signed = StellarSdk.Transaction.fromXDR(
+    signed = StellarSdk.TransactionBuilder.fromXDR(
       signedXdr,
       networkPassphrase
     );
@@ -310,11 +298,11 @@ function stripSignatures(
   tx: StellarSdk.Transaction | StellarSdk.FeeBumpTransaction
 ): string {
   // Clone via XDR round-trip, clear signatures, re-serialise
-  const cloned = StellarSdk.Transaction.fromXDR(
+  const cloned = StellarSdk.TransactionBuilder.fromXDR(
     tx.toXDR(),
     tx instanceof StellarSdk.Transaction
       ? tx.networkPassphrase
-      : NETWORK_PASSPHRASE
+      : NETWORKS.TESTNET.passphrase
   ) as StellarSdk.Transaction;
   cloned.signatures = [];
   return cloned.toXDR();

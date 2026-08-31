@@ -22,6 +22,7 @@ Located in `ui/` directory - reusable design system components:
 
 ### Feature Components
 - **WorkerCard**: Displays worker information
+- **WorkerInfiniteList**: Paginated worker listing
 - **WorkerMap**: Map view of workers
 - **SearchAutocomplete**: Search with autocomplete
 - **TransactionHistory**: Payment/transaction history

@@ -1,14 +1,5 @@
 import { faker } from '@faker-js/faker';
 import argon2 from 'argon2';
-// Shared mock request/response/next and JWT helpers (issue #1278) — single
-// source of truth now lives in @bluecollar/test-utils.
-import {
-  makeJwt,
-  makeExpiredJwt,
-  makeNext,
-  makeRequest,
-  makeResponse,
-} from '@bluecollar/test-utils/express';
 
 /**
  * Test data factories for creating consistent test data
@@ -104,14 +95,11 @@ export function generateStellarAddress(): string {
 }
 
 /**
- * Generate a JWT token for testing.
- *
- * Delegates to the shared `makeJwt` helper from `@bluecollar/test-utils`
- * (issue #1278) while preserving the API test's historical payload defaults
- * and secret resolution.
+ * Generate a JWT token for testing
  */
 export function generateTestToken(payload: any = {}): string {
-  return makeJwt(
+  const jwt = require('jsonwebtoken');
+  return jwt.sign(
     {
       id: faker.string.uuid(),
       email: faker.internet.email(),
@@ -119,14 +107,16 @@ export function generateTestToken(payload: any = {}): string {
       ...payload,
     },
     process.env.JWT_SECRET || 'test-secret',
+    { expiresIn: '1h' }
   );
 }
 
 /**
- * Generate an expired JWT token for testing.
+ * Generate an expired JWT token for testing
  */
 export function generateExpiredToken(payload: any = {}): string {
-  return makeExpiredJwt(
+  const jwt = require('jsonwebtoken');
+  return jwt.sign(
     {
       id: faker.string.uuid(),
       email: faker.internet.email(),
@@ -134,16 +124,40 @@ export function generateExpiredToken(payload: any = {}): string {
       ...payload,
     },
     process.env.JWT_SECRET || 'test-secret',
+    { expiresIn: '-1h' } // Expired 1 hour ago
   );
 }
 
 /**
- * Shared mock request/response/next (issue #1278).
- *
- * These previously duplicated the helpers shipped in `@bluecollar/test-utils`.
- * They now re-export the shared implementation so there is a single source of
- * truth and no per-package copy of the boilerplate.
+ * Create mock request object
  */
-export const createMockRequest = makeRequest;
-export const createMockResponse = makeResponse;
-export const createMockNext = makeNext;
+export function createMockRequest(overrides: any = {}) {
+  return {
+    body: {},
+    params: {},
+    query: {},
+    headers: {},
+    user: null,
+    ...overrides,
+  };
+}
+
+/**
+ * Create mock response object
+ */
+export function createMockResponse() {
+  const res: any = {};
+  res.status = vi.fn().mockReturnValue(res);
+  res.json = vi.fn().mockReturnValue(res);
+  res.send = vi.fn().mockReturnValue(res);
+  res.redirect = vi.fn().mockReturnValue(res);
+  res.setHeader = vi.fn().mockReturnValue(res);
+  return res;
+}
+
+/**
+ * Create mock next function
+ */
+export function createMockNext() {
+  return vi.fn();
+}

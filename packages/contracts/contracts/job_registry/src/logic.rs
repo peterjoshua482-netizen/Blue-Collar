@@ -5,7 +5,6 @@
 //! the `Env` context. No direct storage access from `lib.rs` — always via
 //! `storage::*` or the helpers in this module.
 
-use bluecollar_types::{helpers, ContractError};
 use soroban_sdk::{symbol_short, Address, BytesN, Env, Symbol, Vec};
 
 use crate::storage::{
@@ -47,15 +46,22 @@ pub fn role_to_id(env: &Env, role: &Symbol) -> u64 {
 // =============================================================================
 
 /// Assert that `caller` holds `role` and has signed the transaction.
-pub fn require_role(env: &Env, role: &Symbol, caller: &Address) -> Result<(), ContractError> {
+///
+/// # Panics
+/// - `"Missing role"` if `caller` is not in the role member list.
+pub fn require_role(env: &Env, role: &Symbol, caller: &Address) {
+    caller.require_auth();
     let id = role_to_id(env, role);
     let members = load_role_members(env, id);
-    helpers::require_role(caller, &members)
+    assert!(members.iter().any(|m| m == *caller), "Missing role");
 }
 
 /// Assert that the contract is not paused.
-pub fn require_not_paused(env: &Env) -> Result<(), ContractError> {
-    helpers::require_not_paused(storage::is_paused(env))
+///
+/// # Panics
+/// - `"Contract is paused"` if paused.
+pub fn require_not_paused(env: &Env) {
+    assert!(!storage::is_paused(env), "Contract is paused");
 }
 
 // =============================================================================
@@ -63,10 +69,8 @@ pub fn require_not_paused(env: &Env) -> Result<(), ContractError> {
 // =============================================================================
 
 /// Bootstrap the contract: write admin, initial roles, schema version.
-pub fn do_initialize(env: &Env, admin: &Address) -> Result<(), ContractError> {
-    if storage::is_initialized(env) {
-        return Err(ContractError::AlreadyInitialized);
-    }
+pub fn do_initialize(env: &Env, admin: &Address) {
+    assert!(!storage::is_initialized(env), "Already initialized");
 
     storage::set_initialized(env);
     storage::save_admin(env, admin);
@@ -81,7 +85,6 @@ pub fn do_initialize(env: &Env, admin: &Address) -> Result<(), ContractError> {
 
     env.events()
         .publish((symbol_short!("Init"), admin.clone()), 1u32);
-    Ok(())
 }
 
 // =============================================================================
@@ -89,6 +92,11 @@ pub fn do_initialize(env: &Env, admin: &Address) -> Result<(), ContractError> {
 // =============================================================================
 
 /// Post a new job listing.
+///
+/// # Panics
+/// - `"Contract is paused"` if paused.
+/// - `"Job already exists"` if `id` is already registered.
+/// - `"budget must be non-negative"` if budget < 0.
 pub fn do_post_job(
     env: &Env,
     poster: &Address,
@@ -97,16 +105,12 @@ pub fn do_post_job(
     description_hash: BytesN<32>,
     budget: i128,
     token: Address,
-) -> Result<Job, ContractError> {
+) -> Job {
     // --- Checks ---
-    require_not_paused(env)?;
+    require_not_paused(env);
     poster.require_auth();
-    if load_job(env, &id).is_some() {
-        return Err(ContractError::JobAlreadyExists);
-    }
-    if budget < 0 {
-        return Err(ContractError::AmountMustBePositive);
-    }
+    assert!(load_job(env, &id).is_none(), "Job already exists");
+    assert!(budget >= 0, "budget must be non-negative");
 
     // --- Effects ---
     let job = Job {
@@ -133,27 +137,23 @@ pub fn do_post_job(
     env.events()
         .publish((symbol_short!("JobPost"), id), (poster.clone(), budget));
 
-    Ok(job)
+    job
 }
 
 /// Assign a worker to an open job. Only the job poster may call this.
-pub fn do_assign_worker(
-    env: &Env,
-    caller: &Address,
-    job_id: Symbol,
-    worker: Address,
-) -> Result<(), ContractError> {
+///
+/// # Panics
+/// - `"Job not found"` if `id` does not exist.
+/// - `"Not job poster"` if caller is not the job poster.
+/// - `"Job not open"` if job is not in `Open` status.
+pub fn do_assign_worker(env: &Env, caller: &Address, job_id: Symbol, worker: Address) {
     // --- Checks ---
-    require_not_paused(env)?;
+    require_not_paused(env);
     caller.require_auth();
 
-    let mut job = load_job(env, &job_id).ok_or(ContractError::JobNotFound)?;
-    if job.poster != *caller {
-        return Err(ContractError::UnauthorizedCaller);
-    }
-    if job.status != JobStatus::Open {
-        return Err(ContractError::JobNotOpen);
-    }
+    let mut job = load_job(env, &job_id).expect("Job not found");
+    assert!(job.poster == *caller, "Not job poster");
+    assert!(job.status == JobStatus::Open, "Job not open");
 
     // --- Effects ---
     job.worker = Some(worker.clone());
@@ -162,26 +162,27 @@ pub fn do_assign_worker(
     save_job(env, &job);
 
     // --- Interactions ---
-    env.events().publish(
-        (symbol_short!("Assigned"), job_id),
-        (caller.clone(), worker),
-    );
-    Ok(())
+    env.events()
+        .publish((symbol_short!("Assigned"), job_id), (caller.clone(), worker));
 }
 
 /// Mark a job as completed. Only the assigned worker may call this.
-pub fn do_complete_job(env: &Env, caller: &Address, job_id: Symbol) -> Result<(), ContractError> {
+///
+/// # Panics
+/// - `"Job not found"` — job id does not exist.
+/// - `"Not assigned worker"` — caller is not the assigned worker.
+/// - `"Job not assigned"` — job is not in `Assigned` status.
+pub fn do_complete_job(env: &Env, caller: &Address, job_id: Symbol) {
     // --- Checks ---
-    require_not_paused(env)?;
+    require_not_paused(env);
     caller.require_auth();
 
-    let mut job = load_job(env, &job_id).ok_or(ContractError::JobNotFound)?;
-    if job.worker.as_ref() != Some(caller) {
-        return Err(ContractError::UnauthorizedCaller);
-    }
-    if job.status != JobStatus::Assigned {
-        return Err(ContractError::JobNotAssigned);
-    }
+    let mut job = load_job(env, &job_id).expect("Job not found");
+    assert!(
+        job.worker.as_ref() == Some(caller),
+        "Not assigned worker"
+    );
+    assert!(job.status == JobStatus::Assigned, "Job not assigned");
 
     // --- Effects ---
     job.status = JobStatus::Completed;
@@ -191,22 +192,25 @@ pub fn do_complete_job(env: &Env, caller: &Address, job_id: Symbol) -> Result<()
     // --- Interactions ---
     env.events()
         .publish((symbol_short!("Completed"), job_id), caller.clone());
-    Ok(())
 }
 
 /// Cancel an open or assigned job. Only the poster may call this.
-pub fn do_cancel_job(env: &Env, caller: &Address, job_id: Symbol) -> Result<(), ContractError> {
+///
+/// # Panics
+/// - `"Job not found"` if id does not exist.
+/// - `"Not job poster"` if caller is not the poster.
+/// - `"Job already settled"` if status is Completed or Cancelled.
+pub fn do_cancel_job(env: &Env, caller: &Address, job_id: Symbol) {
     // --- Checks ---
-    require_not_paused(env)?;
+    require_not_paused(env);
     caller.require_auth();
 
-    let mut job = load_job(env, &job_id).ok_or(ContractError::JobNotFound)?;
-    if job.poster != *caller {
-        return Err(ContractError::UnauthorizedCaller);
-    }
-    if job.status == JobStatus::Completed || job.status == JobStatus::Cancelled {
-        return Err(ContractError::InvalidStatus);
-    }
+    let mut job = load_job(env, &job_id).expect("Job not found");
+    assert!(job.poster == *caller, "Not job poster");
+    assert!(
+        job.status != JobStatus::Completed && job.status != JobStatus::Cancelled,
+        "Job already settled"
+    );
 
     // --- Effects ---
     job.status = JobStatus::Cancelled;
@@ -216,24 +220,24 @@ pub fn do_cancel_job(env: &Env, caller: &Address, job_id: Symbol) -> Result<(), 
     // --- Interactions ---
     env.events()
         .publish((symbol_short!("Cancelled"), job_id), caller.clone());
-    Ok(())
 }
 
 /// File a dispute on an assigned job. Either party (poster or worker) may call.
-pub fn do_dispute_job(env: &Env, caller: &Address, job_id: Symbol) -> Result<(), ContractError> {
+///
+/// # Panics
+/// - `"Job not found"` — job id does not exist.
+/// - `"Not a party"` — caller is neither poster nor assigned worker.
+/// - `"Job not assigned"` — only assigned jobs can be disputed.
+pub fn do_dispute_job(env: &Env, caller: &Address, job_id: Symbol) {
     // --- Checks ---
-    require_not_paused(env)?;
+    require_not_paused(env);
     caller.require_auth();
 
-    let mut job = load_job(env, &job_id).ok_or(ContractError::JobNotFound)?;
+    let mut job = load_job(env, &job_id).expect("Job not found");
     let is_poster = job.poster == *caller;
     let is_worker = job.worker.as_ref() == Some(caller);
-    if !is_poster && !is_worker {
-        return Err(ContractError::NotAParty);
-    }
-    if job.status != JobStatus::Assigned {
-        return Err(ContractError::JobNotAssigned);
-    }
+    assert!(is_poster || is_worker, "Not a party");
+    assert!(job.status == JobStatus::Assigned, "Job not assigned");
 
     // --- Effects ---
     job.status = JobStatus::Disputed;
@@ -243,5 +247,4 @@ pub fn do_dispute_job(env: &Env, caller: &Address, job_id: Symbol) -> Result<(),
     // --- Interactions ---
     env.events()
         .publish((symbol_short!("Disputed"), job_id), caller.clone());
-    Ok(())
 }

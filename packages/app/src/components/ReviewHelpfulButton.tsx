@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ThumbsUp } from "lucide-react";
-import { useToggleReviewHelpful } from "@/hooks/queries";
+import { toggleReviewHelpful } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -18,15 +18,18 @@ export default function ReviewHelpfulButton({
 }: Props) {
   const [count, setCount] = useState(initialCount);
   const [helpful, setHelpful] = useState(initialHelpful);
-  const toggle = useToggleReviewHelpful(reviewId);
+  const [loading, setLoading] = useState(false);
 
   const handleToggle = async () => {
+    setLoading(true);
     try {
-      const res = await toggle.mutateAsync();
+      const res = await toggleReviewHelpful(reviewId);
       setHelpful(res.data.helpful);
       setCount(res.data.count);
     } catch {
       // silently fail
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -34,8 +37,8 @@ export default function ReviewHelpfulButton({
     <button
       type="button"
       onClick={handleToggle}
-      disabled={toggle.isPending}
-      aria-busy={toggle.isPending}
+      disabled={loading}
+      aria-busy={loading}
       aria-pressed={helpful}
       className={cn(
         "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors",

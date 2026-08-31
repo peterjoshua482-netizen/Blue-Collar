@@ -5,8 +5,15 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
-import { useEmailNotificationPrefs, useUpdateEmailNotificationPrefs } from "@/hooks/queries";
-import type { EmailNotificationPrefs as NotificationPrefs } from "@/lib/api";
+
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000/api";
+
+interface NotificationPrefs {
+  newWorkerInArea: boolean;
+  workerStatusChange: boolean;
+  reviewReplies: boolean;
+  platformAnnouncements: boolean;
+}
 
 const DEFAULT_PREFS: NotificationPrefs = {
   newWorkerInArea: true,
@@ -24,14 +31,16 @@ const LABELS: Record<keyof NotificationPrefs, string> = {
 
 export default function NotificationPreferencesPage() {
   const router = useRouter();
-  const { user, isLoading } = useAuth();
+  const { user, token, isLoading } = useAuth();
 
-  const prefsQuery = useEmailNotificationPrefs();
   const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
+  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
 
-  const updatePrefs = useUpdateEmailNotificationPrefs();
-  const saving = updatePrefs.isPending;
+  const authHeaders = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
 
   const showToast = (message: string) => {
     setToast(message);
@@ -43,10 +52,16 @@ export default function NotificationPreferencesPage() {
   }, [isLoading, router, user]);
 
   useEffect(() => {
-    if (!prefsQuery.data) return;
-    const data = "data" in prefsQuery.data ? prefsQuery.data.data : prefsQuery.data;
-    if (data) setPrefs({ ...DEFAULT_PREFS, ...data });
-  }, [prefsQuery.data]);
+    if (!token) return;
+
+    fetch(`${API}/users/me/notifications`, { headers: authHeaders })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        const data = json?.data ?? json;
+        if (data) setPrefs({ ...DEFAULT_PREFS, ...data });
+      })
+      .catch(() => {});
+  }, [token]);
 
   const toggle = (key: keyof NotificationPrefs) => {
     setPrefs((current) => ({ ...current, [key]: !current[key] }));
@@ -61,11 +76,21 @@ export default function NotificationPreferencesPage() {
     });
   };
 
-  const handleSave = () => {
-    updatePrefs.mutate(prefs, {
-      onSuccess: () => showToast("Preferences saved!"),
-      onError: () => showToast("Failed to save preferences."),
-    });
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${API}/users/me/notifications`, {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify(prefs),
+      });
+
+      showToast(res.ok ? "Preferences saved!" : "Failed to save preferences.");
+    } catch {
+      showToast("Failed to save preferences.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const allOff = Object.values(prefs).every((value) => !value);

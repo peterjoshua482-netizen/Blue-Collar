@@ -69,7 +69,6 @@ export default function PushNotificationPrompt() {
         </div>
         <button
           onClick={() => setIsVisible(false)}
-          aria-label="Dismiss"
           className="text-gray-400 hover:text-gray-600 shrink-0"
         >
           <X size={18} />

@@ -2,7 +2,6 @@ import { ExternalLink } from "lucide-react";
 import { memo } from "react";
 import type { TransactionListItem } from "@/hooks/useTransactionList";
 import { formatXlmAmount, stellarExplorerTxUrl, truncateStellarAddress } from "@/utils";
-import { formatDate } from "@/lib/utils";
 
 interface TransactionListTableProps {
   transactions: TransactionListItem[];
@@ -16,7 +15,7 @@ const TransactionRow = memo(function TransactionRow({ tx }: TransactionRowProps)
   return (
     <tr className="border-b last:border-0">
       <td className="py-2 pr-4 text-gray-500 whitespace-nowrap">
-        {formatDate(tx.createdAt)}
+        {new Date(tx.createdAt).toLocaleDateString()}
       </td>
       <td className="py-2 pr-4 font-mono text-gray-600">
         {truncateStellarAddress(tx.from)}

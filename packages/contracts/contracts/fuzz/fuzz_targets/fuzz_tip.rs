@@ -1,8 +1,12 @@
 #![no_main]
-use arbitrary::Arbitrary;
-use bluecollar_market::{MarketContract, MarketContractClient};
 use libfuzzer_sys::fuzz_target;
-use soroban_sdk::{testutils::Address as _, token::StellarAssetClient, Address, Env, Symbol};
+use soroban_sdk::{
+    testutils::Address as _,
+    token::StellarAssetClient,
+    Address, Env, Symbol,
+};
+use bluecollar_market::{MarketContract, MarketContractClient};
+use arbitrary::Arbitrary;
 
 #[derive(Arbitrary, Debug)]
 struct TipInput {
@@ -13,7 +17,7 @@ struct TipInput {
 fuzz_target!(|input: TipInput| {
     // Clamp amount to reasonable range (1 to 1_000_000)
     let amount = std::cmp::max(1, std::cmp::min(input.amount as i128, 1_000_000));
-
+    
     // Clamp fee_bps to valid range (0-500)
     let fee_bps = std::cmp::min(input.fee_bps as u32, 500);
 

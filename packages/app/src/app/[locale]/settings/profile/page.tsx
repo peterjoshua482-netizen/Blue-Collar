@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { validateUserProfile, validatePassword, validateRequired } from "@/utils/validation";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000/api";
 
@@ -24,22 +23,17 @@ export default function ProfileSettingsPage() {
     email: "",
   });
   const [profileErrors, setProfileErrors] = useState<Partial<UserProfile>>({});
+  const [profileSaving, setProfileSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
-
-  const updateAccount = useUpdateAccount();
-  const changePassword = useChangePassword();
-  const deleteAccount = useDeleteAccount();
-
-  const profileSaving = updateAccount.isPending;
-  const passwordSaving = changePassword.isPending;
-  const deleting = deleteAccount.isPending;
+  const [deleting, setDeleting] = useState(false);
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -59,71 +53,101 @@ export default function ProfileSettingsPage() {
     });
   }, [user]);
 
+  const getAuthHeaders = () => ({
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  });
+
   const validateProfile = () => {
-    const errors = validateUserProfile(profile);
+    const errors: Partial<UserProfile> = {};
+
+    if (!profile.firstName.trim()) errors.firstName = "First name is required";
+    if (!profile.lastName.trim()) errors.lastName = "Last name is required";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email)) {
+      errors.email = "Enter a valid email";
+    }
+
     setProfileErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
-  const handleProfileSave = () => {
+  const handleProfileSave = async () => {
     if (!validateProfile()) return;
 
-    updateAccount.mutate(profile, {
-      onSuccess: () => {
-        if (user && token) login({ ...user, ...profile }, token);
-        showToast("Profile saved!");
-      },
-      onError: (err) => showToast(err instanceof Error ? err.message : "Failed to save profile."),
-    });
+    setProfileSaving(true);
+    try {
+      const res = await fetch(`${API}/users/me`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(profile),
+      });
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) throw new Error(json.message ?? "Failed to save profile.");
+      if (user && token) login({ ...user, ...profile }, token);
+      showToast("Profile saved!");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to save profile.");
+    } finally {
+      setProfileSaving(false);
+    }
   };
 
   const handlePasswordChange = async () => {
-    const currErr = validateRequired(currentPassword, "Current password");
-    if (currErr) {
-      setPasswordError(currErr);
+    if (!currentPassword) {
+      setPasswordError("Current password is required.");
       return;
     }
-    const newPwdErr = validatePassword(newPassword, 8, true);
-    if (newPwdErr) {
-      setPasswordError(newPwdErr);
+    if (newPassword.length < 8) {
+      setPasswordError("New password must be at least 8 characters.");
       return;
     }
 
     setPasswordError("");
-    changePassword.mutate(
-      { currentPassword, newPassword },
-      {
-        onSuccess: () => {
-          setCurrentPassword("");
-          setNewPassword("");
-          showToast("Password updated!");
-        },
-        onError: (err) => {
-          const message = err instanceof Error ? err.message : "Failed to update password.";
-          if (message === "Current password is incorrect") {
-            setPasswordError(message);
-          } else {
-            showToast(message);
-          }
-        },
+    setPasswordSaving(true);
+    try {
+      const res = await fetch(`${API}/users/me/password`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const json = await res.json().catch(() => ({}));
+
+      if (res.status === 401) {
+        setPasswordError("Current password is incorrect.");
+        return;
       }
-    );
+      if (!res.ok) throw new Error(json.message ?? "Failed to update password.");
+
+      setCurrentPassword("");
+      setNewPassword("");
+      showToast("Password updated!");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to update password.");
+    } finally {
+      setPasswordSaving(false);
+    }
   };
 
-  const handleDeleteAccount = () => {
+  const handleDeleteAccount = async () => {
     if (deleteConfirm !== "DELETE") return;
 
-    deleteAccount.mutate(undefined, {
-      onSuccess: () => {
-        logout();
-        router.replace("/");
-      },
-      onError: (err) => showToast(err instanceof Error ? err.message : "Failed to delete account."),
-      onSettled: () => {
-        setShowDeleteModal(false);
-        setDeleteConfirm("");
-      },
-    });
+    setDeleting(true);
+    try {
+      const res = await fetch(`${API}/users/me`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to delete account.");
+      logout();
+      router.replace("/");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to delete account.");
+    } finally {
+      setDeleting(false);
+      setShowDeleteModal(false);
+      setDeleteConfirm("");
+    }
   };
 
   if (isLoading || !user) {

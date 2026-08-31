@@ -1,7 +1,9 @@
-import { db } from "../db.js";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
 
 export async function seedDefaultPreferences(userId: string) {
-  return db.notificationPreferences.upsert({
+  return prisma.notificationPreferences.upsert({
     where: { userId },
     update: {},
     create: {
@@ -18,7 +20,7 @@ export async function isNotificationEnabled(
   userId: string,
   type: string
 ): Promise<boolean> {
-  const prefs = await db.notificationPreferences.findUnique({
+  const prefs = await prisma.notificationPreferences.findUnique({
     where: { userId },
   });
   if (!prefs) return true;
